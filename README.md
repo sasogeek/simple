@@ -35,7 +35,7 @@ This README will guide you through installing, using, and extending the Simple l
 
 To get started with Simple, you need the following installed:
 
-1. **Go** (version 1.17+): Install from [here](https://golang.org/dl/).
+1. **Go** (version 1.23+): Install from [here](https://golang.org/dl/).
 2. **Git**: Used to clone the repository.
 
 ### Install Simple
@@ -211,4 +211,4 @@ Feel free to open an issue if you find a bug or have suggestions for new feature
 
 ## License
 
-Simple is open-source software licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
+Simple is open-source software licensed under the MIT License. See the [LICENSE](https://opensource.org/license/mit) file for details.
