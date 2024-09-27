@@ -38,6 +38,7 @@ To get started with Simple, you need the following installed:
 1. **Go** (version 1.23+): Install from [here](https://golang.org/dl/).
 2. **Git**: Used to clone the repository.
 
+(The installation script will installs go for you, if you're on macos)
 ### Install Simple
 
 1. Clone the Simple repository:
