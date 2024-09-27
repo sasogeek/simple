@@ -84,7 +84,7 @@ Compile the Simple program into a Go binary and run it:
 ```bash
 simple hello_world.simple
 ```
-This will generate AND run the binary. To run the generated binary,
+This will generate AND run the binary. To run the generated binary without recompiling it,
 run it like so;
 
 ```bash
