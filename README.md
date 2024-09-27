@@ -143,17 +143,6 @@ for num in arr:
     print(num)
 ```
 
-### Functions
-
-You can define functions using the `def` keyword:
-
-```python
-def greet(name):
-    print("Hello, " + name)
-
-greet("Simple")
-```
-
 ### Data Types
 
 - **String**: A sequence of characters, e.g., `"Hello"`.
