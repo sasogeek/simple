@@ -43,3 +43,4 @@ if [[ ":$PATH:" != *":$HOME/simple:"* ]]; then
 fi
 
 echo "The 'simple' compiler is now available in your PATH"
+

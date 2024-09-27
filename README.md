@@ -66,6 +66,7 @@ To get started with Simple, you need the following installed:
    simple --version
    ```
 
+
    This should display the version of the Simple compiler, confirming that it is installed correctly.
 
 ### VSCode Syntax Highlighting
