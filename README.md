@@ -74,6 +74,7 @@ A Visual Studio Code extension for Simple syntax highlighting is available to en
 
 #### Installing the VSCode Extension
 
+
 1. Navigate to the `simple/simple-syntax/` folder in the repository.
 2. Locate the `simple-syntax-0.1.0.vsix` file.
 3. Open Visual Studio Code.
