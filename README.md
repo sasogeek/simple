@@ -1,6 +1,5 @@
-# Simple Programming Language
-
-Simple is an experimental programming language that compiles `.simple` files into Go binaries. It provides a Python-like syntax, allowing developers to write concise, readable code that gets converted into Go for performance.
+## Simple 
+An experimental programming language that compiles `.simple` files into Go binaries. It provides a Python-like syntax, allowing developers to write concise, readable code that gets converted into Go for performance.
 
 This README will guide you through installing, using, and extending the Simple language.
 
@@ -227,4 +226,5 @@ Feel free to open an issue if you find a bug or have suggestions for new feature
 
 ## License
 
-Simple is open-source software licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
+Simple is open-source software licensed under the MIT License. See the [https://opensource.org/license/mit](LICENSE) file for details.
+
