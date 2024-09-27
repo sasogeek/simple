@@ -68,6 +68,22 @@ To get started with Simple, you need the following installed:
 
    This should display the version of the Simple compiler, confirming that it is installed correctly.
 
+### VSCode Syntax Highlighting
+
+A Visual Studio Code extension for Simple syntax highlighting is available to enhance the development experience.
+
+#### Installing the VSCode Extension
+
+1. Navigate to the `simple/simple-syntax/` folder in the repository.
+2. Locate the `simple-syntax-0.1.0.vsix` file.
+3. Open Visual Studio Code.
+4. Go to the Extensions view by clicking the Extensions icon in the Activity Bar on the side of the window or pressing `Ctrl+Shift+X`.
+5. Click on the `...` (ellipsis) in the top right corner of the Extensions view and select `Install from VSIX...`.
+6. Browse to the `simple-syntax-0.1.0.vsix` file and click `Install`.
+
+Once installed, VSCode will automatically apply syntax highlighting to `.simple` files.
+
+
 ## Quick Start
 
 You can create a Simple program in a file with a `.simple` extension. Here's an example:
