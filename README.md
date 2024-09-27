@@ -71,7 +71,7 @@ To get started with Simple, you need the following installed:
 
 ### VSCode Syntax Highlighting
 
-A Visual Studio Code extension for Simple syntax highlighting is available to enhance your development experience.
+A Visual Studio Code extension for Simple syntax highlighting is available to enhance the development experience.
 
 #### Installing the VSCode Extension
 
