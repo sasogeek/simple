@@ -1,0 +1,44 @@
+{
+    "name": "simple-syntax",
+    "displayName": "Simple Syntax",
+    "description": "Syntax highlighting for the Simple programming language",
+    "version": "0.1.0",
+    "publisher": "simple",
+    "engines": {
+      "vscode": "^1.50.0"
+    },
+    "categories": [
+      "Programming Languages"
+    ],
+    "contributes": {
+      "languages": [
+        {
+          "id": "simple",
+          "aliases": ["Simple", "simple"],
+          "extensions": [".simple"],
+          "configuration": "./language-configuration.json"
+        }
+      ],
+      "grammars": [
+        {
+          "language": "simple",
+          "scopeName": "source.simple",
+          "path": "./syntaxes/simple.tmLanguage.json"
+        }
+      ]
+    },
+    "scripts": {
+      "prepublishOnly": "vsce package",
+      "compile": "tsc -p ./"
+    },
+    "repository": {
+      "type": "git",
+      "url": "https://github.com/sasogeek/simple.git"
+    },
+    "devDependencies": {
+      "typescript": "^4.0.0",
+      "vscode": "^1.1.37",
+      "vsce": "^1.95.0"
+    }
+  }
+  
