@@ -55,7 +55,8 @@ To get started with Simple, you need the following installed:
 3. Run the installation script: (only tested on macos)
 
    ```bash
-   sh ./compiler/install.sh
+   cd compiler
+   sh install.sh
    ```
 
    This script will build the Simple compiler and move the binary to your system's `PATH`, making it available globally.
