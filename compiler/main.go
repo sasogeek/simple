@@ -4,84 +4,87 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"simple/codegen"
 	"simple/lexer"
 	"simple/parser"
+	"simple/semantic"
+	"simple/transformer"
 )
 
-func tokenize(l *lexer.Lexer) []lexer.Token {
-	// Collect all tokens
-	var tokens []lexer.Token
-	for {
-		tok := l.NextToken()
-		tokens = append(tokens, tok)
-		l.UpdateLastTwoTokens(tok)
-
-		// Always append NEWLINE and handle indentation if necessary
-		if tok.Type == lexer.TokenNewline {
-			// If the previous two tokens were COLON followed by NEWLINE, expect an INDENT
-			if l.LastTwoTokens[0].Type == lexer.TokenColon && l.LastTwoTokens[1].Type == lexer.TokenNewline {
-				indentToken := l.HandleIndentAfterColonNewline()
-				tokens = append(tokens, indentToken)
-			} else {
-				indentOrDedent := l.HandleNewline()
-				if indentOrDedent.Type != lexer.TokenNewline {
-					tokens = append(tokens, indentOrDedent)
-				}
-			}
-		}
-
-		// Stop if we reach EOF
-		if tok.Type == lexer.TokenEOF {
-			break
-		}
-	}
-	return tokens
-}
-
-const version = "Simple v1.0.0"
-
 func main() {
-	// Check if the --version flag is passed
-	if len(os.Args) == 2 && os.Args[1] == "--version" {
-		fmt.Println(version)
-		return
-	}
+	//if len(os.Args) < 2 {
+	//	fmt.Println("Usage: ./simple <filename.simple>")
+	//	return
+	//}
 
-	if len(os.Args) < 2 {
-		fmt.Println("Usage: ./simple <filename.simple>")
-		return
-	}
-
-	filename := os.Args[1]
+	filename := "test.simple"
+	//filename := os.Args[1]
 	content, err := os.ReadFile(filename)
 	if err != nil {
 		fmt.Printf("Error reading file: %v\n", err)
 		return
 	}
 
-	// Initialize the lexer from the lexer package
+	// Initialize Lexer
 	l := lexer.NewLexer(string(content))
-	var tokens = tokenize(l)
 
-	// Print the tokens for debugging
-	//fmt.Println("Tokens:")
-	//for _, tok := range tokens {
-	//	fmt.Printf("%+v\n", tok)
+	//for {
+	//	tok := l.NextToken()
+	//	fmt.Printf("Type: %-10s Literal: %-10q Line: %d Column: %d\n", tok.Type, tok.Literal, tok.Line, tok.Column)
+	//	if tok.Type == lexer.TokenEOF {
+	//		break
+	//	}
 	//}
 
-	// Initialize the parser with the tokens
-	p := parser.NewParser(tokens)
+	// Initialize Parser
+	p := parser.NewParser(l)
 
-	// Parse the entire program
+	// Parse the program
 	ast := p.ParseProgram()
 
+	if len(p.Errors()) > 0 {
+		fmt.Println("Parser Errors:")
+		for _, msg := range p.Errors() {
+			fmt.Println("\t" + msg)
+		}
+		os.Exit(1)
+	}
+
+	// Initialize Semantic Analyzer
+	analyzer := semantic.NewAnalyzer()
+
+	// Perform Semantic Analysis
+	analyzer.Analyze(ast)
+
+	if len(analyzer.Errors()) > 0 {
+		fmt.Println("Semantic Errors:")
+		for _, msg := range analyzer.Errors() {
+			fmt.Println("\t" + msg)
+		}
+		os.Exit(1)
+	}
+
+	// Initialize Transformer
+	transformer := transformer.NewTransformer(analyzer)
+
+	// Perform Transformation
+	transformer.Transform(ast)
+
+	// Code Generation
 	binaryName := filename[:len(filename)-7]
 	cwd, _ := os.Getwd()
 	outputDir := filepath.Join(cwd, binaryName)
-	moduleName := binaryName
+	os.MkdirAll(outputDir, os.ModePerm)
 
-	if err := parser.CompileSimpleToGo(ast, outputDir, moduleName); err != nil {
-		fmt.Printf("Error during compilation: %v\n", err)
-		return
+	// Initialize Code Generator
+	cg := codegen.NewCodeGenerator(outputDir, analyzer)
+
+	// Generate Go Code
+	err = cg.GenerateCode(ast)
+	if err != nil {
+		fmt.Printf("Code Generation Error: %v\n", err)
+		os.Exit(1)
 	}
+
+	fmt.Println("Compilation successful! Generated Go code is in the '", outputDir, "' directory.")
 }

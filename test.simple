@@ -1,2 +1,14 @@
-name = "Simple"
-print("Hello, " + name)
+import "fmt"
+import "net/http"
+
+def home(w, r):
+    w.Write("Hello Simple!")
+
+
+
+print("Starting HTTP server on :8080")
+
+
+http.HandleFunc("/", home)
+http.HandleFunc("/hello", new_page)
+http.ListenAndServe(":8080")

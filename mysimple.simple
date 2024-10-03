@@ -1,0 +1,4 @@
+def MyFunction():
+    print("hello")
+
+Myvariable = "Variable from mysimple"

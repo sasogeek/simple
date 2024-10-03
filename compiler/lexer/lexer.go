@@ -1,343 +1,395 @@
 package lexer
 
 import (
+	"fmt"
+	"strings"
 	"unicode"
+	"unicode/utf8"
 )
 
-// Define token types
+// TokenType represents the type of a token.
+type TokenType string
+
+// Token types.
 const (
-	TokenEOF          = iota // End of file
-	TokenIdentifier          // Variable and function names
-	TokenKeyword             // def, class, if, else, etc.
-	TokenOperator            // +, -, *, /, ==, !=, is, in, etc.
-	TokenNumber              // 123, 3.14, etc.
-	TokenString              // "hello", 'world'
-	TokenNone                // Python-like None
-	TokenTrue                // True
-	TokenFalse               // False
-	TokenIndent              // Indentation (4 spaces)
-	TokenDedent              // Dedentation
-	TokenNewline             // Newline
-	TokenColon               // :
-	TokenComma               // ,
-	TokenParenOpen           // (
-	TokenParenClose          // )
-	TokenBracketOpen         // [
-	TokenBracketClose        // ]
-	TokenBraceOpen           // {
-	TokenBraceClose          // }
-	TokenAssert              // assert keyword
-	TokenBreak               // break keyword
-	TokenComment             // #
-	TokenDot                 // .
-	TokenIllegal             //
+	TokenEOF          TokenType = "EOF"
+	TokenIdentifier   TokenType = "IDENTIFIER"
+	TokenNumber       TokenType = "NUMBER"
+	TokenString       TokenType = "STRING"
+	TokenOperator     TokenType = "OPERATOR"
+	TokenKeyword      TokenType = "KEYWORD"
+	TokenNewline      TokenType = "NEWLINE"
+	TokenIndent       TokenType = "INDENT"
+	TokenDedent       TokenType = "DEDENT"
+	TokenIllegal      TokenType = "ILLEGAL"
+	TokenColon        TokenType = ":"
+	TokenSemicolon    TokenType = ";"
+	TokenComma        TokenType = ","
+	TokenParenOpen    TokenType = "("
+	TokenParenClose   TokenType = ")"
+	TokenBracketOpen  TokenType = "["
+	TokenBracketClose TokenType = "]"
+	TokenBraceOpen    TokenType = "{"
+	TokenBraceClose   TokenType = "}"
+	TokenDot          TokenType = "DOT"
+
+	// Comparison Operators
+	TokenEQ    TokenType = "=="
+	TokenNotEQ TokenType = "!="
+	TokenGT    TokenType = ">"
+	TokenGTE   TokenType = ">="
+	TokenLT    TokenType = "<"
+	TokenLTE   TokenType = "<="
+
+	// Boolean Literals
+	TokenTrue  TokenType = "TRUE"
+	TokenFalse TokenType = "FALSE"
+
+	// Arithmetic Operators
+	TokenPlus     TokenType = "+"
+	TokenMinus    TokenType = "-"
+	TokenAsterisk TokenType = "*"
+	TokenSlash    TokenType = "/"
+	TokenModulo   TokenType = "%"
+	TokenBang     TokenType = "!"
+
+	// Assignment Operator
+	TokenAssign TokenType = "="
 )
 
-// Token structure
+// Token represents a lexical token.
 type Token struct {
-	Type    int
+	Type    TokenType
 	Literal string
 	Line    int
 	Column  int
 }
 
-// Lexer structure
-type Lexer struct {
-	input         string
-	position      int
-	readPosition  int
-	currentChar   byte
-	line          int
-	column        int
-	indentStack   []int    // Tracks indentation levels
-	LastTwoTokens [2]Token // Tracks the last two tokens
+// keywords maps keyword strings to their token types.
+var keywords = map[string]TokenType{
+	"def":    TokenKeyword, // Function definition
+	"return": TokenKeyword,
+	"if":     TokenKeyword,
+	"else":   TokenKeyword,
+	"elif":   TokenKeyword,
+	"while":  TokenKeyword,
+	"for":    TokenKeyword,
+	"in":     TokenKeyword,
+	"import": TokenKeyword,
+	"print":  TokenIdentifier, // 'print' can be a built-in function
+	"true":   TokenTrue,
+	"false":  TokenFalse,
+	"None":   TokenKeyword,
 }
 
-// NewLexer Create a new lexer
+// LookupIdent checks if an identifier is a keyword and returns the appropriate token type.
+func LookupIdent(ident string) TokenType {
+	if tok, ok := keywords[ident]; ok {
+		return tok
+	}
+	return TokenIdentifier
+}
+
+// Lexer represents a lexical scanner.
+type Lexer struct {
+	input         string
+	position      int     // Current position in input (points to current char)
+	readPosition  int     // Current reading position in input (after current char)
+	ch            rune    // Current character under examination
+	line          int     // Current line number
+	column        int     // Current column number
+	indentStack   []int   // Stack to keep track of indentation levels
+	pendingTokens []Token // Queue for INDENT/DEDENT tokens
+	AtNewLine     bool    // Indicates if the lexer is at the start of a new line
+}
+
+// NewLexer initializes a new Lexer.
 func NewLexer(input string) *Lexer {
-	l := &Lexer{input: input, indentStack: []int{0}}
+	l := &Lexer{
+		input:         input,
+		line:          1,
+		column:        0,
+		indentStack:   []int{0}, // Start with indentation level 0
+		pendingTokens: []Token{},
+		AtNewLine:     true, // Start at a new line
+	}
 	l.readChar()
 	return l
 }
 
-// Read the next character in the input
+// readChar reads the next character.
 func (l *Lexer) readChar() {
 	if l.readPosition >= len(l.input) {
-		l.currentChar = 0 // EOF
+		l.ch = 0
 	} else {
-		l.currentChar = l.input[l.readPosition]
+		r, width := utf8.DecodeRuneInString(l.input[l.readPosition:])
+		l.ch = r
+		l.readPosition += width
 	}
+
+	if l.ch == '\n' {
+		l.line++
+		l.column = 0
+		l.AtNewLine = true
+	} else {
+		l.column++
+	}
+
 	l.position = l.readPosition
-	l.readPosition++
-	l.column++
 }
 
-// PeekChar Peek at the next character without advancing the position
-func (l *Lexer) PeekChar() byte {
+// peekChar peeks at the next character without advancing positions.
+func (l *Lexer) peekChar() rune {
 	if l.readPosition >= len(l.input) {
-		return 0
+		return 0 // ASCII code for NUL
 	}
-	return l.input[l.readPosition]
+	r, _ := utf8.DecodeRuneInString(l.input[l.readPosition:])
+	return r
 }
 
-// Skip whitespace (except for indentation)
-func (l *Lexer) skipWhitespace() {
-	for l.currentChar == ' ' || l.currentChar == '\t' {
-		l.readChar()
-	}
-}
-
-// HandleNewline Handle newlines and indentation after encountering a newline
-func (l *Lexer) HandleNewline() Token {
-
-	// Count spaces for indentation
-	start := l.position
-	for l.currentChar == ' ' || l.currentChar == '\t' {
-		l.readChar()
-	}
-	indentLength := l.position - start
-
-	// Compare indentation to the current level
-	currentIndent := l.indentStack[len(l.indentStack)-1]
-	if indentLength > currentIndent {
-		l.indentStack = append(l.indentStack, indentLength)
-		return Token{Type: TokenIndent, Literal: "INDENT", Line: l.line, Column: l.column}
-	} else if indentLength < currentIndent {
-		l.indentStack = l.indentStack[:len(l.indentStack)-1] // Pop the current indent level
-		return Token{Type: TokenDedent, Literal: "DEDENT", Line: l.line, Column: l.column}
-	}
-
-	// No change in indentation level
-	return Token{Type: TokenNewline, Literal: "\\n", Line: l.line, Column: l.column}
-}
-
-// HandleIndentAfterColonNewline Handle indentation after colon + newline
-func (l *Lexer) HandleIndentAfterColonNewline() Token {
-	// Count spaces for indentation
-	start := l.position
-	for l.currentChar == ' ' || l.currentChar == '\t' {
-		l.readChar()
-	}
-	indentLength := l.position - start
-
-	// Compare indentation to the current level
-	currentIndent := l.indentStack[len(l.indentStack)-1]
-	if indentLength > currentIndent { // New indent level
-		l.indentStack = append(l.indentStack, indentLength)
-		return Token{Type: TokenIndent, Literal: "INDENT", Line: l.line, Column: l.column}
-	} else if indentLength < currentIndent { // Dedent level
-		l.indentStack = l.indentStack[:len(l.indentStack)-1] // Pop the current indent level
-		return Token{Type: TokenDedent, Literal: "DEDENT", Line: l.line, Column: l.column}
-	}
-
-	// No indentation change (stay at the same level)
-	return Token{Type: TokenNewline, Literal: "\\n", Line: l.line, Column: l.column}
-}
-
-// UpdateLastTwoTokens Update last two tokens for colon + newline detection
-func (l *Lexer) UpdateLastTwoTokens(tok Token) {
-	l.LastTwoTokens[0] = l.LastTwoTokens[1]
-	l.LastTwoTokens[1] = tok
-}
-
-// NextToken Get the next token from the input
+// NextToken scans the next token and returns it.
 func (l *Lexer) NextToken() Token {
+	// If there are pending tokens (INDENT/DEDENT), emit them first
+	if len(l.pendingTokens) > 0 {
+		tok := l.pendingTokens[0]
+		l.pendingTokens = l.pendingTokens[1:]
+		return tok
+	}
+
+	// Handle indentation at the start of a new line
+	if l.AtNewLine {
+		tok := l.handleIndentation()
+		l.AtNewLine = false // Reset the flag after handling indentation
+		if tok.Type != TokenNewline && tok.Type != TokenEOF {
+			return tok
+		}
+	}
+
 	l.skipWhitespace()
 
 	var tok Token
-	tok.Line = l.line
-	tok.Column = l.column
 
-	switch l.currentChar {
+	switch l.ch {
 	case '=':
-		if l.PeekChar() == '=' {
+		if l.peekChar() == '=' {
+			ch := l.ch
 			l.readChar()
-			tok = Token{Type: TokenOperator, Literal: "==", Line: l.line, Column: l.column}
+			literal := string(ch) + string(l.ch)
+			tok = Token{Type: TokenEQ, Literal: literal, Line: l.line, Column: l.column - 1}
 		} else {
-			tok = Token{Type: TokenOperator, Literal: "=", Line: l.line, Column: l.column}
+			tok = Token{Type: TokenAssign, Literal: string(l.ch), Line: l.line, Column: l.column}
 		}
+	case '+':
+		tok = Token{Type: TokenPlus, Literal: string(l.ch), Line: l.line, Column: l.column}
+	case '-':
+		tok = Token{Type: TokenMinus, Literal: string(l.ch), Line: l.line, Column: l.column}
+	case '*':
+		tok = Token{Type: TokenAsterisk, Literal: string(l.ch), Line: l.line, Column: l.column}
+	case '/':
+		tok = Token{Type: TokenSlash, Literal: string(l.ch), Line: l.line, Column: l.column}
+	case '%':
+		tok = Token{Type: TokenModulo, Literal: string(l.ch), Line: l.line, Column: l.column}
 	case '!':
-		if l.PeekChar() == '=' {
+		if l.peekChar() == '=' {
+			ch := l.ch
 			l.readChar()
-			tok = Token{Type: TokenOperator, Literal: "!=", Line: l.line, Column: l.column}
+			literal := string(ch) + string(l.ch)
+			tok = Token{Type: TokenNotEQ, Literal: literal, Line: l.line, Column: l.column - 1}
 		} else {
-			tok = Token{Type: TokenIllegal, Literal: "!", Line: l.line, Column: l.column}
+			tok = Token{Type: TokenBang, Literal: string(l.ch), Line: l.line, Column: l.column}
 		}
 	case '>':
-		if l.PeekChar() == '=' {
+		if l.peekChar() == '=' {
+			ch := l.ch
 			l.readChar()
-			tok = Token{Type: TokenOperator, Literal: ">=", Line: l.line, Column: l.column}
+			literal := string(ch) + string(l.ch)
+			tok = Token{Type: TokenGTE, Literal: literal, Line: l.line, Column: l.column - 1}
 		} else {
-			tok = Token{Type: TokenOperator, Literal: ">", Line: l.line, Column: l.column}
+			tok = Token{Type: TokenGT, Literal: string(l.ch), Line: l.line, Column: l.column}
 		}
 	case '<':
-		if l.PeekChar() == '=' {
+		if l.peekChar() == '=' {
+			ch := l.ch
 			l.readChar()
-			tok = Token{Type: TokenOperator, Literal: "<=", Line: l.line, Column: l.column}
+			literal := string(ch) + string(l.ch)
+			tok = Token{Type: TokenLTE, Literal: literal, Line: l.line, Column: l.column - 1}
 		} else {
-			tok = Token{Type: TokenOperator, Literal: "<", Line: l.line, Column: l.column}
+			tok = Token{Type: TokenLT, Literal: string(l.ch), Line: l.line, Column: l.column}
 		}
-	case ':':
-		tok = Token{Type: TokenColon, Literal: ":", Line: l.line, Column: l.column}
-		l.readChar() // Skip the colon
-		//l.UpdateLastTwoTokens(tok)
-		return tok
-	case '#': // Comment
-		l.skipComment()
-		tok = l.NextToken() // Recurse to get the next non-comment token
-	case '\n':
-		// Emit a newline token first
-		tok = Token{Type: TokenNewline, Literal: "\\n", Line: l.line, Column: l.column}
-		l.readChar() // Consume the newline character
-		//l.UpdateLastTwoTokens(tok)
-		for l.PeekChar() == '\n' {
-			l.readChar()
-		}
-		return tok
-	case '+':
-		tok = Token{Type: TokenOperator, Literal: "+", Line: l.line, Column: l.column}
-	case '-':
-		tok = Token{Type: TokenOperator, Literal: "-", Line: l.line, Column: l.column}
-	case '*':
-		tok = Token{Type: TokenOperator, Literal: "*", Line: l.line, Column: l.column}
-	case '/':
-		if l.PeekChar() == '/' {
-			l.readChar()
-			tok = Token{Type: TokenOperator, Literal: "//", Line: l.line, Column: l.column}
-		} else {
-			tok = Token{Type: TokenOperator, Literal: "/", Line: l.line, Column: l.column}
-		}
-	case '&':
-		if l.PeekChar() == '&' {
-			l.readChar()
-			tok = Token{Type: TokenOperator, Literal: "&&", Line: l.line, Column: l.column}
-		} else {
-			tok = Token{Type: TokenIllegal, Literal: "&", Line: l.line, Column: l.column}
-		}
-	case '|':
-		if l.PeekChar() == '|' {
-			l.readChar()
-			tok = Token{Type: TokenOperator, Literal: "||", Line: l.line, Column: l.column}
-		} else {
-			tok = Token{Type: TokenIllegal, Literal: "|", Line: l.line, Column: l.column}
-		}
-	case '"':
-		tok = Token{Type: TokenString, Literal: l.readString('"'), Line: l.line, Column: l.column}
-	case '\'':
-		tok = Token{Type: TokenString, Literal: l.readString('\''), Line: l.line, Column: l.column}
 	case '(':
-		tok = Token{Type: TokenParenOpen, Literal: "(", Line: l.line, Column: l.column}
+		tok = Token{Type: TokenParenOpen, Literal: string(l.ch), Line: l.line, Column: l.column}
 	case ')':
-		tok = Token{Type: TokenParenClose, Literal: ")", Line: l.line, Column: l.column}
-	case '{':
-		tok = Token{Type: TokenBraceOpen, Literal: "{", Line: l.line, Column: l.column}
-	case '}':
-		tok = Token{Type: TokenBraceClose, Literal: "}", Line: l.line, Column: l.column}
+		tok = Token{Type: TokenParenClose, Literal: string(l.ch), Line: l.line, Column: l.column}
 	case '[':
-		tok = Token{Type: TokenBracketOpen, Literal: "[", Line: l.line, Column: l.column}
+		tok = Token{Type: TokenBracketOpen, Literal: string(l.ch), Line: l.line, Column: l.column}
 	case ']':
-		tok = Token{Type: TokenBracketClose, Literal: "]", Line: l.line, Column: l.column}
+		tok = Token{Type: TokenBracketClose, Literal: string(l.ch), Line: l.line, Column: l.column}
+	case '{':
+		tok = Token{Type: TokenBraceOpen, Literal: string(l.ch), Line: l.line, Column: l.column}
+	case '}':
+		tok = Token{Type: TokenBraceClose, Literal: string(l.ch), Line: l.line, Column: l.column}
 	case ',':
-		tok = Token{Type: TokenComma, Literal: ",", Line: l.line, Column: l.column}
+		tok = Token{Type: TokenComma, Literal: string(l.ch), Line: l.line, Column: l.column}
+	case ';':
+		tok = Token{Type: TokenSemicolon, Literal: string(l.ch), Line: l.line, Column: l.column}
+	case ':':
+		tok = Token{Type: TokenColon, Literal: string(l.ch), Line: l.line, Column: l.column}
+	case '"', '\'':
+		literal := l.readString(l.ch)
+		tok = Token{Type: TokenString, Literal: literal, Line: l.line, Column: l.column - len(literal) - 1}
+	case '\n':
+		tok = Token{Type: TokenNewline, Literal: "\\n", Line: l.line, Column: l.column}
+		l.readChar()
+		l.AtNewLine = true
+		return tok
+	case 0:
+		// At EOF, emit DEDENT tokens for any remaining indentation levels
+		if len(l.indentStack) > 1 {
+			l.indentStack = l.indentStack[:len(l.indentStack)-1]
+			return Token{Type: TokenDedent, Literal: "DEDENT", Line: l.line, Column: l.column}
+		}
+		tok = Token{Type: TokenEOF, Literal: "", Line: l.line, Column: l.column}
 	case '.':
-		tok = Token{Type: TokenDot, Literal: ".", Line: l.line, Column: l.column}
+		tok = Token{Type: TokenDot, Literal: string(l.ch), Line: l.line, Column: l.column}
 	default:
-		// Handle identifiers, numbers, strings, etc.
-		if isLetter(l.currentChar) {
-			tok.Literal = l.readIdentifier()
-			tok.Type = lookupKeyword(tok.Literal)
+		if isLetter(l.ch) {
+			literal := l.readIdentifier()
+			tokenType := LookupIdent(literal)
+			tok = Token{Type: tokenType, Literal: literal, Line: l.line, Column: l.column - len(literal) + 1}
 			return tok
-		} else if isDigit(l.currentChar) {
-			tok.Literal = l.readNumber()
-			tok.Type = TokenNumber
+		} else if isDigit(l.ch) {
+			literal := l.readNumber()
+			tok = Token{Type: TokenNumber, Literal: literal, Line: l.line, Column: l.column - len(literal) + 1}
 			return tok
 		} else {
-			tok = Token{Type: TokenEOF, Literal: "", Line: l.line, Column: l.column}
+			tok = Token{Type: TokenIllegal, Literal: string(l.ch), Line: l.line, Column: l.column}
 		}
 	}
 
-	l.readChar() // Advance to the next character
+	l.readChar()
 
 	return tok
 }
 
-// Skip comments
-func (l *Lexer) skipComment() {
-	for l.currentChar != '\n' && l.currentChar != 0 {
+// skipWhitespace skips over spaces and tabs.
+func (l *Lexer) skipWhitespace() {
+	for l.ch == ' ' || l.ch == '\t' || l.ch == '\r' {
 		l.readChar()
 	}
 }
 
-// Read identifiers (variable, function names)
+// readIdentifier reads an identifier and advances the lexer's positions.
 func (l *Lexer) readIdentifier() string {
-	start := l.position
-	for isLetter(l.currentChar) || isDigit(l.currentChar) {
+	position := l.readPosition - 1
+	for isLetter(l.ch) || isDigit(l.ch) {
 		l.readChar()
 	}
-	return l.input[start:l.position]
+	return l.input[position : l.readPosition-1]
 }
 
-// Read numbers
+// readNumber reads a number (integer or float) and advances the lexer's positions.
 func (l *Lexer) readNumber() string {
-	start := l.position
-	for isDigit(l.currentChar) || l.currentChar == '.' {
-		l.readChar()
-	}
-	return l.input[start:l.position]
-}
+	position := l.readPosition - 1
+	hasDot := false
 
-// Read strings (single or double quotes)
-func (l *Lexer) readString(quote byte) string {
-	start := l.position
 	for {
-		l.readChar()
-		if l.currentChar == quote || l.currentChar == 0 {
+		if isDigit(l.ch) {
+			l.readChar()
+		} else if l.ch == '.' && !hasDot {
+			hasDot = true
+			l.readChar()
+		} else {
 			break
 		}
 	}
-	return l.input[start : l.position+1]
+
+	return l.input[position : l.readPosition-1]
 }
 
-// Check if a character is a letter
-func isLetter(ch byte) bool {
-	return unicode.IsLetter(rune(ch)) || ch == '_'
-}
+// readString reads a string literal, handling escape sequences.
+func (l *Lexer) readString(quoteChar rune) string {
+	var sb strings.Builder
+	l.readChar() // Skip the opening quote
 
-// Check if a character is a digit
-func isDigit(ch byte) bool {
-	return unicode.IsDigit(rune(ch))
-}
-
-// Lookup keywords and special values like None, True, False
-func lookupKeyword(ident string) int {
-	keywords := map[string]int{
-		"def":     TokenKeyword,
-		"class":   TokenKeyword,
-		"if":      TokenKeyword,
-		"else":    TokenKeyword,
-		"elif":    TokenKeyword,
-		"while":   TokenKeyword,
-		"for":     TokenKeyword,
-		"return":  TokenKeyword,
-		"True":    TokenTrue,
-		"False":   TokenFalse,
-		"None":    TokenNone,
-		"assert":  TokenAssert,
-		"break":   TokenBreak,
-		"in":      TokenOperator,
-		"is":      TokenOperator,
-		"print":   TokenKeyword,
-		"and":     TokenOperator,
-		"or":      TokenOperator,
-		"not":     TokenOperator,
-		"import":  TokenKeyword,
-		"from":    TokenKeyword,
-		"try":     TokenKeyword,
-		"except":  TokenKeyword,
-		"finally": TokenKeyword,
+	for {
+		if l.ch == quoteChar {
+			break
+		}
+		if l.ch == '\\' {
+			l.readChar()
+			switch l.ch {
+			case 'n':
+				sb.WriteRune('\n')
+			case 't':
+				sb.WriteRune('\t')
+			case '\\':
+				sb.WriteRune('\\')
+			case '\'':
+				sb.WriteRune('\'')
+			case '"':
+				sb.WriteRune('"')
+			default:
+				// Unknown escape sequence, include as is
+				sb.WriteRune(l.ch)
+			}
+		} else if l.ch == 0 {
+			// Reached EOF without closing quote
+			break
+		} else {
+			sb.WriteRune(l.ch)
+		}
+		l.readChar()
 	}
-	if tokType, ok := keywords[ident]; ok {
-		return tokType
+
+	//l.readChar() // Skip the closing quote
+	return sb.String()
+}
+
+// handleIndentation handles indentation at the start of a new line.
+func (l *Lexer) handleIndentation() Token {
+	spaces := 0
+	for {
+		if l.ch == ' ' {
+			spaces++
+			l.readChar()
+		} else if l.ch == '\t' {
+			spaces += 4 // Assume tab = 4 spaces
+			l.readChar()
+		} else {
+			break
+		}
 	}
-	return TokenIdentifier
+
+	currentIndent := l.indentStack[len(l.indentStack)-1]
+
+	if spaces > currentIndent {
+		l.indentStack = append(l.indentStack, spaces)
+		return Token{Type: TokenIndent, Literal: "INDENT", Line: l.line, Column: l.column}
+	} else if spaces < currentIndent && l.ch != '\n' {
+		var dedentTokens []Token
+		for len(l.indentStack) > 1 && spaces < l.indentStack[len(l.indentStack)-1] {
+			l.indentStack = l.indentStack[:len(l.indentStack)-1]
+			dedentTokens = append(dedentTokens, Token{Type: TokenDedent, Literal: "DEDENT", Line: l.line, Column: l.column})
+		}
+		if len(l.indentStack) == 0 || spaces != l.indentStack[len(l.indentStack)-1] {
+			return Token{Type: TokenIllegal, Literal: fmt.Sprintf("Invalid dedent at line %d", l.line), Line: l.line, Column: l.column}
+		}
+		l.pendingTokens = append(dedentTokens, l.pendingTokens...)
+		tok := l.pendingTokens[0]
+		l.pendingTokens = l.pendingTokens[1:]
+		return tok
+	}
+
+	// Indentation level is the same
+	return Token{Type: TokenNewline, Literal: "\\n", Line: l.line, Column: l.column}
+}
+
+// isLetter checks if the rune is a letter or underscore.
+func isLetter(ch rune) bool {
+	return unicode.IsLetter(ch) || ch == '_'
+}
+
+// isDigit checks if the rune is a digit.
+func isDigit(ch rune) bool {
+	return unicode.IsDigit(ch)
 }
