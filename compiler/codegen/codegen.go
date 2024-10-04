@@ -235,7 +235,7 @@ func (cg *CodeGenerator) generateExpression(file *os.File, expr parser.Expressio
 	case *parser.StringLiteral:
 		switch strings.Contains(e.Value, "[]byte") {
 		case true:
-			s := e.Value[6:]
+			s := e.Value[7 : len(e.Value)-1]
 			fmt.Fprintf(file, "[]byte(%q)", s)
 		default:
 			fmt.Fprintf(file, "%q", e.Value)
@@ -539,7 +539,13 @@ func (cg *CodeGenerator) generateWhileStatement(file *os.File, ws *parser.WhileS
 // generateForStatement generates Go code for a for loop.
 func (cg *CodeGenerator) generateForStatement(file *os.File, fs *parser.ForStatement) {
 	cg.writeIndent(file)
-	fmt.Fprintf(file, "for _, %s := range ", fs.Variable.Value)
+	switch fs.Iterable.(type) {
+	case *parser.IntegerLiteral:
+		fmt.Fprintf(file, "for %s := range ", fs.Variable.Value)
+	default:
+		fmt.Fprintf(file, "for _, %s = range ", fs.Variable.Value)
+	}
+
 	cg.generateExpression(file, fs.Iterable)
 	fmt.Fprintln(file, " {")
 	cg.indentLevel++
