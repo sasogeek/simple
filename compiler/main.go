@@ -85,9 +85,12 @@ func runBinary(binaryName string) error {
 	return nil
 }
 
+const version = "Simple 3.2024.10"
+
 func main() {
-	if len(os.Args) < 2 {
-		fmt.Println("Usage: ./simple <filename.simple>")
+	// Check if the --version flag is passed
+	if len(os.Args) == 2 && os.Args[1] == "--version" {
+		fmt.Println(version)
 		return
 	}
 
