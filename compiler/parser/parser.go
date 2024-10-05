@@ -2,10 +2,9 @@ package parser
 
 import (
 	"fmt"
+	"simple/lexer"
 	"strconv"
 	"strings"
-
-	"simple/lexer"
 )
 
 // Type represents a type in the Simple language.
@@ -42,8 +41,8 @@ func (pt *PointerType) String() string {
 
 // NamedType represents a named type, possibly from an imported package.
 type NamedType struct {
-	Name    string // e.g., "ResponseWriter"
-	Package string // e.g., "http"
+	Name    string
+	Package string
 }
 
 func (nt *NamedType) TypeName() string {
@@ -74,7 +73,7 @@ func (at *ArrayType) String() string {
 type ArrayLiteral struct {
 	Token    lexer.Token // The '[' token
 	Elements []Expression
-	Type     Type // Inferred element type
+	Type     Type
 }
 
 func (al *ArrayLiteral) expressionNode()      {}
@@ -99,7 +98,7 @@ func (mt *MapType) String() string {
 type MapLiteral struct {
 	Token lexer.Token // The '{' token
 	Pairs map[Expression]Expression
-	Type  Type // Inferred key and value types
+	Type  Type
 }
 
 func (ml *MapLiteral) expressionNode()      {}
@@ -141,8 +140,6 @@ func (ft *FunctionType) String() string {
 	return fmt.Sprintf("func(%s) %s", strings.Join(params, ", "), nil)
 
 }
-
-// In parser/ast.go
 
 // TypeConversionExpression represents a type conversion.
 type TypeConversionExpression struct {
@@ -230,7 +227,7 @@ func (i *Identifier) String() string       { return i.Value }
 // IntegerLiteral represents an integer.
 type IntegerLiteral struct {
 	Token lexer.Token
-	Value int64
+	Value interface{}
 }
 
 func (il *IntegerLiteral) expressionNode()      {}
@@ -505,6 +502,24 @@ func (se *SelectorExpression) String() string {
 	return out.String()
 }
 
+// IndexExpression represents an index operation, like array[index]
+type IndexExpression struct {
+	Token lexer.Token // The '[' token
+	Left  Expression
+	Index Expression
+}
+
+func (ie *IndexExpression) expressionNode()      {}
+func (ie *IndexExpression) TokenLiteral() string { return ie.Token.Literal }
+func (ie *IndexExpression) String() string {
+	var out strings.Builder
+	out.WriteString(ie.Left.String())
+	out.WriteString("[")
+	out.WriteString(ie.Index.String())
+	out.WriteString("]")
+	return out.String()
+}
+
 // Precedence levels.
 const (
 	_ int = iota
@@ -520,19 +535,20 @@ const (
 
 // precedences maps token types to their precedence.
 var precedences = map[lexer.TokenType]int{
-	lexer.TokenEQ:        EQUALS,
-	lexer.TokenNotEQ:     EQUALS,
-	lexer.TokenLT:        LESSGREATER,
-	lexer.TokenLTE:       LESSGREATER,
-	lexer.TokenGT:        LESSGREATER,
-	lexer.TokenGTE:       LESSGREATER,
-	lexer.TokenPlus:      SUM,
-	lexer.TokenMinus:     SUM,
-	lexer.TokenAsterisk:  PRODUCT,
-	lexer.TokenSlash:     PRODUCT,
-	lexer.TokenModulo:    PRODUCT,
-	lexer.TokenParenOpen: CALL, // For function calls
-	lexer.TokenDot:       SELECTOR,
+	lexer.TokenEQ:          EQUALS,
+	lexer.TokenNotEQ:       EQUALS,
+	lexer.TokenLT:          LESSGREATER,
+	lexer.TokenLTE:         LESSGREATER,
+	lexer.TokenGT:          LESSGREATER,
+	lexer.TokenGTE:         LESSGREATER,
+	lexer.TokenPlus:        SUM,
+	lexer.TokenMinus:       SUM,
+	lexer.TokenAsterisk:    PRODUCT,
+	lexer.TokenSlash:       PRODUCT,
+	lexer.TokenModulo:      PRODUCT,
+	lexer.TokenParenOpen:   CALL, // For function calls
+	lexer.TokenDot:         SELECTOR,
+	lexer.TokenBracketOpen: CALL,
 }
 
 // Parser represents a parser.
@@ -564,12 +580,15 @@ func NewParser(l *lexer.Lexer) *Parser {
 	// Register prefix parsers.
 	p.registerPrefix(lexer.TokenIdentifier, p.parseIdentifier)
 	p.registerPrefix(lexer.TokenNumber, p.parseIntegerLiteral)
+	p.registerPrefix(lexer.TokenNumber, p.parseIntegerLiteral)
 	p.registerPrefix(lexer.TokenString, p.parseStringLiteral)
 	p.registerPrefix(lexer.TokenBang, p.parsePrefixExpression)
 	p.registerPrefix(lexer.TokenMinus, p.parsePrefixExpression)
 	p.registerPrefix(lexer.TokenParenOpen, p.parseGroupedExpression)
 	p.registerPrefix(lexer.TokenTrue, p.parseBooleanLiteral)
 	p.registerPrefix(lexer.TokenFalse, p.parseBooleanLiteral)
+	p.registerPrefix(lexer.TokenBracketOpen, p.parseArrayLiteral)
+	p.registerPrefix(lexer.TokenBraceOpen, p.parseMapLiteral)
 
 	// Register infix parsers.
 	p.registerInfix(lexer.TokenPlus, p.parseInfixExpression)
@@ -585,12 +604,76 @@ func NewParser(l *lexer.Lexer) *Parser {
 	p.registerInfix(lexer.TokenGTE, p.parseInfixExpression)
 	p.registerInfix(lexer.TokenParenOpen, p.parseCallExpression)
 	p.registerInfix(lexer.TokenDot, p.parseSelectorExpression)
+	p.registerInfix(lexer.TokenBracketOpen, p.parseIndexExpression)
 
 	// Read two tokens to initialize curToken and peekToken.
 	p.nextToken()
 	p.nextToken()
 
 	return p
+}
+
+func (p *Parser) parseIndexExpression(left Expression) Expression {
+	exp := &IndexExpression{
+		Token: p.curToken,
+		Left:  left,
+	}
+
+	p.nextToken()
+	exp.Index = p.parseExpression(LOWEST)
+
+	if !p.expectPeek(lexer.TokenBracketClose) {
+		return nil
+	}
+
+	return exp
+}
+
+func (p *Parser) parseArrayLiteral() Expression {
+	array := &ArrayLiteral{
+		Token: p.curToken,
+	}
+
+	array.Elements = p.parseExpressionList(lexer.TokenBracketClose)
+
+	return array
+}
+
+func (p *Parser) parseMapLiteral() Expression {
+	m := &MapLiteral{
+		Token: p.curToken,
+		Pairs: make(map[Expression]Expression),
+	}
+
+	if p.peekToken.Type == lexer.TokenBraceClose {
+		p.nextToken()
+		return m
+	}
+
+	for {
+		p.nextToken()
+		key := p.parseExpression(LOWEST)
+
+		if !p.expectPeek(lexer.TokenColon) {
+			return nil
+		}
+
+		p.nextToken()
+		value := p.parseExpression(LOWEST)
+
+		m.Pairs[key] = value
+
+		if p.peekToken.Type != lexer.TokenComma {
+			break
+		}
+		p.nextToken()
+	}
+
+	if !p.expectPeek(lexer.TokenBraceClose) {
+		return nil
+	}
+
+	return m
 }
 
 // Errors returns parser errors.
@@ -1037,6 +1120,27 @@ func (p *Parser) parseIntegerLiteral() Expression {
 		Token: p.curToken,
 	}
 
+	switch strings.Contains(p.curToken.Literal, ".") {
+	case true:
+		value, err := strconv.ParseFloat(p.curToken.Literal, 64)
+		if err != nil {
+			msg := fmt.Sprintf("could not parse %q as integer (Line %d, Column %d)", p.curToken.Literal, p.curToken.Line, p.curToken.Column)
+			p.errors = append(p.errors, msg)
+			return nil
+		}
+		il.Value = value
+		return il
+	case false:
+		value, err := strconv.ParseInt(p.curToken.Literal, 0, 64)
+		if err != nil {
+			msg := fmt.Sprintf("could not parse %q as integer (Line %d, Column %d)", p.curToken.Literal, p.curToken.Line, p.curToken.Column)
+			p.errors = append(p.errors, msg)
+			return nil
+		}
+		il.Value = value
+		return il
+	}
+
 	value, err := strconv.ParseInt(p.curToken.Literal, 0, 64)
 	if err != nil {
 		msg := fmt.Sprintf("could not parse %q as integer (Line %d, Column %d)", p.curToken.Literal, p.curToken.Line, p.curToken.Column)
@@ -1184,9 +1288,10 @@ func Inspect(node Node, pre NodeVisitor) {
 			Inspect(stmt, pre)
 		}
 	case *IfStatement:
-		Inspect(n.Condition, pre)
-		Inspect(n.Consequence, pre)
-		if n.Alternative != nil {
+		if n != nil {
+			Inspect(n.Condition, pre)
+			Inspect(n.Consequence, pre)
+
 			Inspect(n.Alternative, pre)
 		}
 	case *WhileStatement:

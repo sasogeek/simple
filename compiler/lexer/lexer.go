@@ -76,7 +76,7 @@ var keywords = map[string]TokenType{
 	"for":    TokenKeyword,
 	"in":     TokenKeyword,
 	"import": TokenKeyword,
-	"print":  TokenIdentifier, // 'print' can be a built-in function
+	"print":  TokenIdentifier,
 	"true":   TokenTrue,
 	"false":  TokenFalse,
 	"None":   TokenKeyword,
@@ -130,7 +130,7 @@ func (l *Lexer) readChar() {
 	if l.ch == '\n' {
 		l.line++
 		l.column = 0
-		l.AtNewLine = true
+		//l.AtNewLine = true
 	} else {
 		l.column++
 	}
@@ -234,9 +234,14 @@ func (l *Lexer) NextToken() Token {
 		tok = Token{Type: TokenSemicolon, Literal: string(l.ch), Line: l.line, Column: l.column}
 	case ':':
 		tok = Token{Type: TokenColon, Literal: string(l.ch), Line: l.line, Column: l.column}
-	case '"', '\'':
+	case '"', '\'', '`':
+		//quoteChar := l.ch
 		literal := l.readString(l.ch)
+		//if quoteChar == '`' {
+		//	literal = strings.Trim(literal, `\"`)
+		//}
 		tok = Token{Type: TokenString, Literal: literal, Line: l.line, Column: l.column - len(literal) - 1}
+		return tok
 	case '\n':
 		tok = Token{Type: TokenNewline, Literal: "\\n", Line: l.line, Column: l.column}
 		l.readChar()
@@ -306,42 +311,129 @@ func (l *Lexer) readNumber() string {
 	return l.input[position : l.readPosition-1]
 }
 
-// readString reads a string literal, handling escape sequences.
+// readString reads a string literal, handling escape sequences and multi-line strings.
 func (l *Lexer) readString(quoteChar rune) string {
 	var sb strings.Builder
 	l.readChar() // Skip the opening quote
 
-	for {
-		if l.ch == quoteChar {
-			break
-		}
-		if l.ch == '\\' {
-			l.readChar()
-			switch l.ch {
-			case 'n':
-				sb.WriteRune('\n')
-			case 't':
-				sb.WriteRune('\t')
-			case '\\':
-				sb.WriteRune('\\')
-			case '\'':
-				sb.WriteRune('\'')
-			case '"':
-				sb.WriteRune('"')
-			default:
-				// Unknown escape sequence, include as is
-				sb.WriteRune(l.ch)
+	isTripleQuoted := false
+
+	// Helper function to peek ahead n runes without advancing the lexer's position
+	peekAhead := func(n int) rune {
+		position := l.readPosition
+		var ch rune
+		for i := 0; i < n; i++ {
+			if position >= len(l.input) {
+				return 0 // NUL
 			}
-		} else if l.ch == 0 {
-			// Reached EOF without closing quote
-			break
-		} else {
-			sb.WriteRune(l.ch)
+			r, width := utf8.DecodeRuneInString(l.input[position:])
+			ch = r
+			position += width
 		}
-		l.readChar()
+		return ch
 	}
 
-	//l.readChar() // Skip the closing quote
+	// Check if it's a triple-quoted string
+	if l.ch == quoteChar && l.peekChar() == quoteChar {
+		isTripleQuoted = true
+		// Consume the next two quoteChars
+		l.readChar() // Skip second quoteChar
+		l.readChar() // Skip third quoteChar
+	}
+
+	if quoteChar == '`' {
+		// Backtick strings are raw strings; read until the closing backtick
+		for {
+			if l.ch == '`' {
+				//fmt.Println(string(l.peekChar()))
+				l.readChar() // Consume closing backtick
+				break
+			}
+			if l.ch == 0 {
+				// Reached EOF without closing backtick
+				break
+			}
+			sb.WriteRune(l.ch)
+			l.readChar()
+		}
+	} else if isTripleQuoted {
+		// Triple-quoted string
+		for {
+			if l.ch == quoteChar && l.peekChar() == quoteChar && peekAhead(1) == quoteChar {
+				// Consume the three quoteChars
+				l.readChar() // Skip first quoteChar
+				l.readChar() // Skip second quoteChar
+				l.readChar() // Skip third quoteChar
+				break
+			}
+			if l.ch == 0 {
+				// Reached EOF without closing triple quote
+				break
+			}
+			if l.ch == '\\' {
+				l.readChar()
+				switch l.ch {
+				case 'n':
+					sb.WriteRune('\n')
+				case 't':
+					sb.WriteRune('\t')
+				case 'r':
+					sb.WriteRune('\r')
+				case '\\':
+					sb.WriteRune('\\')
+				case '\'':
+					sb.WriteRune('\'')
+				case '"':
+					sb.WriteRune('"')
+				default:
+					// Unknown escape sequence, include the backslash and the character
+					sb.WriteRune('\\')
+					sb.WriteRune(l.ch)
+				}
+				l.readChar()
+			} else {
+				sb.WriteRune(l.ch)
+				l.readChar()
+			}
+		}
+	} else {
+		// Single-quoted or double-quoted string
+		for {
+			if l.ch == quoteChar {
+				l.readChar() // Consume closing quote
+				break
+			}
+			if l.ch == '\\' {
+				l.readChar()
+				switch l.ch {
+				case 'n':
+					sb.WriteRune('\n')
+				case 't':
+					sb.WriteRune('\t')
+				case 'r':
+					sb.WriteRune('\r')
+				case '\\':
+					sb.WriteRune('\\')
+				case '\'':
+					sb.WriteRune('\'')
+				case '"':
+					sb.WriteRune('"')
+				default:
+					// Unknown escape sequence, include the backslash and the character
+					sb.WriteRune('\\')
+					sb.WriteRune(l.ch)
+				}
+				l.readChar()
+			} else if l.ch == 0 || l.ch == '\n' {
+				// Reached EOF or newline without closing quote
+				break
+			} else {
+				sb.WriteRune(l.ch)
+				l.readChar()
+			}
+		}
+	}
+
 	return sb.String()
 }
 
@@ -353,7 +445,7 @@ func (l *Lexer) handleIndentation() Token {
 			spaces++
 			l.readChar()
 		} else if l.ch == '\t' {
-			spaces += 4 // Assume tab = 4 spaces
+			spaces += 4 // convert tab to 4 spaces
 			l.readChar()
 		} else {
 			break

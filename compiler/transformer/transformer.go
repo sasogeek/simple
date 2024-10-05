@@ -3,6 +3,7 @@ package transformer
 import (
 	"fmt"
 	"go/types"
+	"simple/lexer"
 	"simple/parser"
 	"simple/semantic"
 	"strings"
@@ -62,7 +63,21 @@ func (t *Transformer) handleCallExpression(ce *parser.CallExpression) {
 						if methodName == funcName {
 							for paramId := range ce.Arguments {
 								expectedType := methodSig.Params().At(paramId)
-								ce.Arguments[paramId].(*parser.StringLiteral).Value = fmt.Sprintf("%s(\"%s\")", expectedType.Type().String(), ce.Arguments[paramId].(*parser.StringLiteral).Value)
+								switch ce.Arguments[paramId].(type) {
+								case *parser.StringLiteral:
+									ce.Arguments[paramId].(*parser.StringLiteral).Value = fmt.Sprintf("%s(\"%s\")", expectedType.Type().String(), ce.Arguments[paramId].(*parser.StringLiteral).String())
+								case *parser.Identifier:
+									ce.Arguments[paramId].(*parser.Identifier).Value = fmt.Sprintf("%s(%s)", expectedType.Type().String(), ce.Arguments[paramId].(*parser.Identifier).String())
+								case *parser.InfixExpression:
+									stringValue := ""
+									stringLiteral := &parser.StringLiteral{
+										Token: lexer.Token{Type: lexer.TokenString},
+										Value: stringValue,
+									}
+									stringLiteral.Value = t.expressionToString(ce.Arguments[paramId].(*parser.InfixExpression))
+									stringLiteral.Value = fmt.Sprintf("%s(%s)", expectedType.Type().String(), stringLiteral.Value)
+									ce.Arguments[paramId] = stringLiteral
+								}
 							}
 						}
 
@@ -80,7 +95,7 @@ func (t *Transformer) handleCallExpression(ce *parser.CallExpression) {
 		if extFuncType, exists := t.analyzer.ExternalFuncs[fqFuncName]; exists {
 			// Perform type conversion for arguments
 			for i, arg := range ce.Arguments {
-				// Infer the argument's type
+
 				argType := t.analyzer.InferExpressionType(arg, true)
 				expectedType := extFuncType.ParameterTypes[i]
 
@@ -102,25 +117,41 @@ func (t *Transformer) handleCallExpression(ce *parser.CallExpression) {
 	}
 }
 
+func (t *Transformer) expressionToString(expr parser.Expression) string {
+	switch e := expr.(type) {
+	case *parser.InfixExpression:
+		ls := t.expressionToString(e.Left)
+		rs := t.expressionToString(e.Right)
+		switch e.Operator {
+		case "+":
+			return fmt.Sprintf("fmt.Sprintf(\"%%v %%v\", %s, %s)", ls, rs)
+		default:
+			return fmt.Sprintf("fmt.Sprintf(\"%%v %%v\", %s, %s)", ls, rs)
+		}
+	case *parser.Identifier:
+		return fmt.Sprintf("fmt.Sprintf(\"%%v\", %s)", e.Value)
+	case *parser.StringLiteral:
+		return fmt.Sprintf("%q", e.Value)
+	default:
+		return e.String()
+	}
+}
+
 func (t *Transformer) wrapWithTypeConversion(arg parser.Expression, targetType parser.Type) parser.Expression {
 	argType := t.analyzer.InferExpressionType(arg, true)
 	if t.analyzer.AreTypesCompatible(argType, targetType) {
-		// No conversion needed
 		return arg
 	}
 
-	// Use go/types to determine if a conversion is possible
 	srcGoType := t.analyzer.GetGoTypeFromParserType(argType)
 	destGoType := t.analyzer.GetGoTypeFromParserType(targetType)
 
 	if types.ConvertibleTo(srcGoType, destGoType) {
-		// Wrap the argument with a type conversion expression
 		return &parser.TypeConversionExpression{
 			Expression: arg,
 			TargetType: targetType,
 		}
 	} else {
-		// Report an error if conversion is not possible
 		//t.analyzer.errors = append(t.analyzer.errors, fmt.Sprintf("Cannot convert type '%s' to '%s'", argType.String(), targetType.String()))
 		return arg
 	}

@@ -11,10 +11,11 @@ import (
 
 // Symbol represents a symbol in the symbol table.
 type Symbol struct {
-	Name   string
-	Type   parser.Type
-	Scope  string // "global", "local", "builtin", "imported"
-	GoType types.Type
+	Name     string
+	Type     parser.Type
+	Scope    string // "global", "local", "builtin", "imported"
+	GoType   types.Type
+	Metadata map[string]any
 }
 
 // SymbolTable represents a symbol table with scope chaining.
@@ -222,21 +223,75 @@ func (a *Analyzer) Analyze(node parser.Node) {
 	case *parser.Identifier:
 		a.handleIdentifier(n, false)
 	case *parser.IfStatement:
-		a.Analyze(n.Condition)
-		a.Analyze(n.Consequence)
-		if n.Alternative != nil {
+		if n != nil {
+			a.Analyze(n.Condition)
+			a.Analyze(n.Consequence)
 			a.Analyze(n.Alternative)
 		}
 	case *parser.WhileStatement:
 		a.Analyze(n.Condition)
+		//switch n.Condition.(type) {
+		//case *parser.InfixExpression:
+		//	a.Analyze(n.Condition.(*parser.InfixExpression).Left)
+		//	switch n.Condition.(*parser.InfixExpression).Left.(type) {
+		//	case *parser.Identifier:
+		//
+		//	}
+		//	//symbol, found := a.CurrentTable.Resolve(n.Condition.(*parser.InfixExpression).Left.)
+		//	//if found {
+		//	//	switch symbol.Type.(type) {
+		//	//	case *parser.BasicType:
+		//	//		a.CurrentTable.Define(n.Condition.(*parser.Identifier).Value, &Symbol{
+		//	//			Name:  n.Condition.(*parser.Identifier).Value,
+		//	//			Type:  &parser.BasicType{Name: "int"}, // Initial type
+		//	//			Scope: "local",
+		//	//		})
+		//	//	default:
+		//	//		a.CurrentTable.Define(n.Condition.(*parser.Identifier).Value, &Symbol{
+		//	//			Name:  n.Condition.(*parser.Identifier).Value,
+		//	//			Type:  &parser.BasicType{Name: "interface{}"}, // Initial type
+		//	//			Scope: "local",
+		//	//		})
+		//	//	}
+		//	//
+		//	//} else {
+		//	//	a.CurrentTable.Define(n.Condition.(*parser.Identifier).Value, &Symbol{
+		//	//		Name:  n.Condition.(*parser.Identifier).Value,
+		//	//		Type:  &parser.BasicType{Name: "interface{}"}, // Initial type
+		//	//		Scope: "local",
+		//	//	})
+		//	//}
+		//}
 		a.Analyze(n.Body)
 	case *parser.ForStatement:
 		a.Analyze(n.Iterable)
-		a.CurrentTable.Define(n.Variable.Value, &Symbol{
-			Name:  n.Variable.Value,
-			Type:  &parser.BasicType{Name: "interface{}"}, // Initial type
-			Scope: "local",
-		})
+		switch n.Iterable.(type) {
+		case *parser.Identifier:
+			symbol, found := a.CurrentTable.Resolve(n.Iterable.(*parser.Identifier).Value)
+			if found {
+				switch symbol.Type.(type) {
+				case *parser.BasicType:
+					a.CurrentTable.Define(n.Variable.Value, &Symbol{
+						Name:  n.Variable.Value,
+						Type:  &parser.BasicType{Name: "int"}, // Initial type
+						Scope: "local",
+					})
+				default:
+					a.CurrentTable.Define(n.Variable.Value, &Symbol{
+						Name:  n.Variable.Value,
+						Type:  &parser.BasicType{Name: "interface{}"}, // Initial type
+						Scope: "local",
+					})
+				}
+
+			} else {
+				a.CurrentTable.Define(n.Variable.Value, &Symbol{
+					Name:  n.Variable.Value,
+					Type:  &parser.BasicType{Name: "interface{}"}, // Initial type
+					Scope: "local",
+				})
+			}
+		}
 		a.Analyze(n.Body)
 	case *parser.ReturnStatement:
 		if n.ReturnValue != nil {
@@ -266,7 +321,7 @@ func (a *Analyzer) handleFunctionLiteral(fl *parser.FunctionLiteral) {
 			Type:  paramTypes[i],
 			Scope: fl.Name.Value,
 		}
-		a.GlobalTable.Define(paramSymbol.Name, paramSymbol)
+		a.CurrentTable.Define(paramSymbol.Name, paramSymbol)
 	}
 
 	functionType := &parser.FunctionType{
@@ -439,6 +494,12 @@ func (a *Analyzer) handleAssignmentStatement(as *parser.AssignmentStatement) {
 		Type:  varType,
 		Scope: scope,
 	})
+	// Assign the Inferred type to the variable
+	a.GlobalTable.Define(as.Name.Value, &Symbol{
+		Name:  as.Name.Value,
+		Type:  varType,
+		Scope: scope,
+	})
 }
 
 // handleCallExpression processes function calls.
@@ -476,7 +537,7 @@ func (a *Analyzer) handleCallExpression(ce *parser.CallExpression) {
 							argType = paramType
 							switch arg.(type) {
 							case *parser.Identifier:
-								fmt.Println(prevType)
+								//fmt.Println(prevType)
 								switch prevType.(type) {
 								case *parser.FunctionType:
 									if symbol, ok := a.CurrentTable.Resolve(arg.String()); ok {
@@ -629,11 +690,21 @@ func (a *Analyzer) handleIdentifier(id *parser.Identifier, reportErrors bool) {
 func (a *Analyzer) InferExpressionType(expr parser.Expression, reportErrors bool) parser.Type {
 	switch e := expr.(type) {
 	case *parser.IntegerLiteral:
+		switch strings.Contains(e.Token.Literal, ".") {
+		case true:
+			return &parser.BasicType{Name: "float"}
+		case false:
+			return &parser.BasicType{Name: "int"}
+		}
 		return &parser.BasicType{Name: "int"}
 	case *parser.StringLiteral:
 		return &parser.BasicType{Name: "string"}
 	case *parser.BooleanLiteral:
 		return &parser.BasicType{Name: "bool"}
+	case *parser.ArrayLiteral:
+		return &parser.BasicType{Name: "slice"}
+	case *parser.MapLiteral:
+		return &parser.BasicType{Name: "map"}
 	case *parser.Identifier:
 		symbol, found := a.CurrentTable.Resolve(e.Value)
 		if !found {
@@ -666,12 +737,32 @@ func (a *Analyzer) InferExpressionType(expr parser.Expression, reportErrors bool
 	case *parser.InfixExpression:
 		leftType := a.InferExpressionType(e.Left, reportErrors)
 		rightType := a.InferExpressionType(e.Right, reportErrors)
-		if e.Operator == "+" {
-			if leftType.String() == "string" || rightType.String() == "string" {
+		switch e.Operator {
+		case "+", "-", "*", "/", "%", "<", "<=", ">", ">=", "==":
+			switch leftType.String() {
+			case "string":
 				return &parser.BasicType{Name: "string"}
-			} else if leftType.String() == "int" && rightType.String() == "int" {
-				return &parser.BasicType{Name: "int"}
+			case "int":
+				switch rightType.String() {
+				case "int":
+					return &parser.BasicType{Name: "int"}
+				case "float":
+					return &parser.BasicType{Name: "float"}
+				}
 			}
+			switch rightType.String() {
+			case "string":
+				return &parser.BasicType{Name: "string"}
+			case "int":
+				switch leftType.String() {
+				case "int":
+					return &parser.BasicType{Name: "int"}
+				case "float":
+					return &parser.BasicType{Name: "float"}
+				}
+			}
+		default:
+			return &parser.BasicType{Name: "interface{}"}
 		}
 		return &parser.BasicType{Name: "interface{}"}
 	case *parser.PrefixExpression:

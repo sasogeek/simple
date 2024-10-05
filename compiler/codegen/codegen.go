@@ -185,13 +185,26 @@ func (cg *CodeGenerator) generateAssignmentStatement(file *os.File, as *parser.A
 	// Get the variable's type from the symbol table
 	symbol, found := cg.analyzer.CurrentTable.Resolve(as.Name.Value)
 	if !found {
-		fmt.Fprintf(os.Stderr, "Undefined variable: %s\n", as.Name.Value)
-		return
+		symbol, found = cg.analyzer.GlobalTable.Resolve(as.Name.Value)
+		if !found {
+			fmt.Fprintf(os.Stderr, "Undefined variable: %s\n", as.Name.Value)
+			return
+		}
+
 	}
-	varType := symbol.Type.String()
-	fmt.Fprintf(file, "var %s %s = ", as.Name.Value, varType)
-	cg.generateExpression(file, as.Value)
-	fmt.Fprintln(file)
+	if symbol.Metadata == nil {
+		//varType := symbol.Type.String()
+		fmt.Fprintf(file, "%s := ", as.Name.Value)
+		cg.generateExpression(file, as.Value)
+		fmt.Fprintln(file)
+		symbol.Metadata = map[string]any{"set": true}
+	} else {
+		fmt.Fprintf(file, "%s = ", as.Name.Value)
+		cg.generateExpression(file, as.Value)
+		fmt.Fprintln(file)
+		symbol.Metadata = map[string]any{"set": true}
+	}
+
 }
 
 // generateStatement generates Go code for a statement.
@@ -236,7 +249,8 @@ func (cg *CodeGenerator) generateExpression(file *os.File, expr parser.Expressio
 		switch strings.Contains(e.Value, "[]byte") {
 		case true:
 			s := e.Value[7 : len(e.Value)-1]
-			fmt.Fprintf(file, "[]byte(%q)", s)
+			s = strings.Trim(s, "\"")
+			fmt.Fprintf(file, "[]byte(%s)", s)
 		default:
 			fmt.Fprintf(file, "%q", e.Value)
 		}
@@ -257,9 +271,61 @@ func (cg *CodeGenerator) generateExpression(file *os.File, expr parser.Expressio
 		cg.generateSelectorExpression(file, e)
 	case *parser.TypeConversionExpression:
 		cg.generateTypeConversionExpression(file, e)
+	case *parser.ArrayLiteral:
+		cg.generateArrayLiteral(file, e)
+	case *parser.MapLiteral:
+		cg.generateMapLiteral(file, e)
+	case *parser.IndexExpression:
+		fmt.Fprint(file, e.Left.String())
+		fmt.Fprint(file, "[")
+		fmt.Fprint(file, e.Index.String())
+		fmt.Fprint(file, "]")
 	default:
 		// Handle other expressions as needed
 	}
+}
+
+func (cg *CodeGenerator) generateArrayLiteral(file *os.File, arr *parser.ArrayLiteral) {
+	fmt.Fprint(file, "[]any{")
+	for _, el := range arr.Elements {
+		fmt.Fprint(file, el)
+		fmt.Fprint(file, ", ")
+	}
+	fmt.Fprint(file, "}")
+}
+
+func (cg *CodeGenerator) generateMapLiteral(file *os.File, m *parser.MapLiteral) {
+	// Determine the map type
+	keyType := "any"
+	valueType := "any"
+
+	if m.Type != nil {
+		if mt, ok := m.Type.(*parser.MapType); ok {
+			keyType = mt.KeyType.String()
+			valueType = mt.ValueType.String()
+		}
+	}
+
+	// Write the map type
+	fmt.Fprintf(file, "map[%s]%s{", keyType, valueType)
+
+	// Iterate over key-value pairs
+	first := true
+	for key, value := range m.Pairs {
+		if !first {
+			fmt.Fprint(file, ", ")
+		}
+		first = false
+
+		// Generate key expression
+		cg.generateExpression(file, key)
+		fmt.Fprint(file, ": ")
+
+		// Generate value expression
+		cg.generateExpression(file, value)
+	}
+
+	fmt.Fprint(file, "}")
 }
 
 func (cg *CodeGenerator) generateTypeConversionExpression(file *os.File, expr *parser.TypeConversionExpression) string {
@@ -301,39 +367,119 @@ func (cg *CodeGenerator) generateSelectorExpression(file *os.File, se *parser.Se
 	cg.generateExpression(file, se.Selector)
 }
 
+func (cg *CodeGenerator) isNumeric(str string, slice []string) bool {
+	for _, v := range slice {
+		if v == str {
+			return true
+		}
+	}
+	return false
+}
+
 // generateInfixExpression generates Go code for an infix expression.
 func (cg *CodeGenerator) generateInfixExpression(file *os.File, ie *parser.InfixExpression) {
 	switch ie.Operator {
-	case "+":
+	case "+", "-", "*", "/", "%", "<", "<=", ">", ">=", "==":
 		leftType := cg.getExpressionType(ie.Left)
 		rightType := cg.getExpressionType(ie.Right)
 
-		if leftType.String() == "string" && rightType.String() == "interface{}" {
-			// Perform type assertion on the right operand
+		numeric := cg.isNumeric(leftType.String(), []string{"int", "float"})
+		numeric = cg.isNumeric(rightType.String(), []string{"int", "float"})
+
+		if !numeric {
+			// If either side is not an int, convert both sides to strings
 			fmt.Fprint(file, "(")
+
+			// Convert left side to string
+			switch left := ie.Left.(type) {
+			case *parser.Identifier:
+				fmt.Fprintf(file, "fmt.Sprintf(\"%%v\", %s)", left.Value)
+			case *parser.InfixExpression:
+				cg.generateInfixExpression(file, left)
+			default:
+				fmt.Fprint(file, "fmt.Sprintf(\"%v\", ")
+				cg.generateExpression(file, ie.Left)
+				fmt.Fprint(file, ")")
+			}
+
+			fmt.Fprint(file, " + ")
+
+			// Convert right side to string
+			switch right := ie.Right.(type) {
+			case *parser.Identifier:
+				fmt.Fprintf(file, "fmt.Sprintf(\"%%v\", %s)", right.Value)
+			case *parser.InfixExpression:
+				cg.generateInfixExpression(file, right)
+			default:
+				fmt.Fprint(file, "fmt.Sprintf(\"%v\", ")
+				cg.generateExpression(file, ie.Right)
+				fmt.Fprint(file, ")")
+			}
+
+			fmt.Fprint(file, ")")
+			return
+		}
+
+		if leftType.String() == "float" || rightType.String() == "float" {
+			// Handle other type combinations as needed
+			fmt.Fprintf(file, "float64(")
 			cg.generateExpression(file, ie.Left)
-			fmt.Fprint(file, " + ")
-			fmt.Fprintf(file, "fmt.Sprintf(\"%%v\", %s)", ie.Right.(*parser.Identifier).Value)
-			fmt.Fprint(file, ")")
-			return
-		}
+			fmt.Fprintf(file, ") %s ", ie.Operator)
 
-		if rightType.String() == "string" && leftType.String() == "interface{}" {
-			// Perform type assertion on the left operand
-			fmt.Fprint(file, "(")
-			fmt.Fprintf(file, "fmt.Sprintf(\"%%v\", %s)", ie.Left.(*parser.Identifier).Value)
-			fmt.Fprint(file, " + ")
+			//switch ie.Left.(type) {
+			//case *parser.IndexExpression:
+			//	fmt.Fprintf(file, ") %s ", leftType.String(), ie.Operator)
+			//case *parser.Identifier:
+			//	fmt.Fprintf(file, ")  %s ", ie.Operator)
+			//default:
+			//	fmt.Fprintf(file, ") %s ", ie.Operator)
+			//}
+
+			fmt.Fprintf(file, "float64(")
 			cg.generateExpression(file, ie.Right)
-			fmt.Fprint(file, ")")
+			fmt.Fprintf(file, ")")
+			//switch ie.Right.(type) {
+			//case *parser.IndexExpression:
+			//	fmt.Fprintf(file, ".(float64)")
+			//case *parser.Identifier:
+			//	fmt.Fprintf(file, ".(float64)")
+			//default:
+			//	fmt.Fprintf(file, ".(float64)")
+			//}
+		} else {
+			// Handle other type combinations as needed
+			fmt.Fprintf(file, "int(")
+			cg.generateExpression(file, ie.Left)
+			fmt.Fprintf(file, ") %s ", ie.Operator)
+			//switch ie.Left.(type) {
+			//case *parser.IndexExpression:
+			//	fmt.Fprintf(file, ".(int64) %s ", ie.Operator)
+			//case *parser.Identifier:
+			//	fmt.Fprintf(file, ".(int64) %s ", ie.Operator)
+			//default:
+			//	fmt.Fprintf(file, ".(int64) %s ", ie.Operator)
+			//}
+
+			fmt.Fprintf(file, "int(")
+			cg.generateExpression(file, ie.Right)
+			fmt.Fprintf(file, ")")
+			//switch ie.Right.(type) {
+			//case *parser.IndexExpression:
+			//	fmt.Fprintf(file, ".(int64)")
+			//case *parser.Identifier:
+			//	fmt.Fprintf(file, ".(int64)")
+			//default:
+			//	fmt.Fprintf(file, ".(int64)")
+			//}
 			return
 		}
 
-		// Handle other type combinations as needed
+	default:
+		// Handle other operators
+		cg.generateExpression(file, ie.Left)
+		fmt.Fprintf(file, " %s ", ie.Operator)
+		cg.generateExpression(file, ie.Right)
 	}
-
-	cg.generateExpression(file, ie.Left)
-	fmt.Fprintf(file, " %s ", ie.Operator)
-	cg.generateExpression(file, ie.Right)
 }
 
 // getExpressionType retrieves the type of an expression from the symbol table.
@@ -365,6 +511,10 @@ func (cg *CodeGenerator) getExpressionType(expr parser.Expression) parser.Type {
 			}
 		}
 		return &parser.BasicType{Name: "interface{}"}
+	case *parser.IndexExpression:
+		return &parser.BasicType{Name: "int"}
+	case *parser.InfixExpression:
+		return cg.getExpressionType(e.Left)
 	default:
 		return &parser.BasicType{Name: "interface{}"}
 	}
@@ -438,6 +588,14 @@ func (cg *CodeGenerator) generateCallExpression(file *os.File, ce *parser.CallEx
 		}
 	}
 
+	//if se, ok := ce.Function.(*parser.SelectorExpression); ok {
+	//	switch se.Left.(type) {
+	//	case *parser.CallExpression:
+	//		cg.generateCallExpression(file, se.Left.(*parser.CallExpression))
+	//		return
+	//	}
+	//}
+
 	// Handle generic function calls
 	// Infer the function type
 	funcType := cg.analyzer.InferExpressionType(ce.Function, true)
@@ -451,7 +609,7 @@ func (cg *CodeGenerator) generateCallExpression(file *os.File, ce *parser.CallEx
 	for i, arg := range ce.Arguments {
 		argType := cg.analyzer.InferExpressionType(arg, true)
 		var expectedType parser.Type
-		if i < len(paramTypes) {
+		if len(paramTypes) > 0 {
 			expectedType = paramTypes[i]
 		} else {
 			expectedType = &parser.BasicType{Name: "interface{}"}
@@ -496,8 +654,10 @@ func (cg *CodeGenerator) needsTypeConversion(argType, expectedType parser.Type) 
 
 // generateBlockStatement generates Go code for a block of statements.
 func (cg *CodeGenerator) generateBlockStatement(file *os.File, block *parser.BlockStatement) {
-	for _, stmt := range block.Statements {
-		cg.generateStatement(file, stmt)
+	if block != nil {
+		for _, stmt := range block.Statements {
+			cg.generateStatement(file, stmt)
+		}
 	}
 }
 
@@ -542,8 +702,22 @@ func (cg *CodeGenerator) generateForStatement(file *os.File, fs *parser.ForState
 	switch fs.Iterable.(type) {
 	case *parser.IntegerLiteral:
 		fmt.Fprintf(file, "for %s := range ", fs.Variable.Value)
+	case *parser.ArrayLiteral:
+		fmt.Fprintf(file, "for _, %s := range ", fs.Variable.Value)
+	case *parser.Identifier:
+		symbol, _ := cg.analyzer.CurrentTable.Resolve(fs.Iterable.(*parser.Identifier).Value)
+		switch symbol.Type.(type) {
+		case *parser.BasicType:
+			switch symbol.Type.(*parser.BasicType).Name {
+			case "int":
+				fmt.Fprintf(file, "for _, %s := range ", fs.Variable.Value)
+			case "slice", "map":
+				fmt.Fprintf(file, "for %s, _ := range ", fs.Variable.Value)
+			}
+		}
+
 	default:
-		fmt.Fprintf(file, "for _, %s = range ", fs.Variable.Value)
+		fmt.Fprintf(file, "for %s, _ := range ", fs.Variable.Value)
 	}
 
 	cg.generateExpression(file, fs.Iterable)

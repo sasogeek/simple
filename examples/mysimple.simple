@@ -1,0 +1,27 @@
+import "net/http"
+
+def home(w, r):
+    w.Header().Set("Content-Type", "text/html")
+    name = "Simple"
+    w.Write(`<!DOCTYPE html>
+            		<html>
+            		<head>
+            			<title>My Page</title>
+            		</head>
+            		<body>
+            			<h1>Hello, World!</h1>
+            			<h2>` + name + ` is here!</h2>
+            			<p>This is a simple HTML page served using net/http in Go.</p>
+            		</body>
+            		</html>`)
+
+
+
+http.HandleFunc("/", home)
+
+
+
+port = "8080"
+print("Starting HTTP server on :"+port)
+print("http://localhost:"+port)
+http.ListenAndServe(":"+port)
