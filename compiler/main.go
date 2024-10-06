@@ -72,7 +72,7 @@ func runBinary(binaryName string) error {
 	}
 
 	// Execute the binary
-	cmd := exec.Command("./" + binaryName)
+	cmd := exec.Command(binaryName)
 	cmd.Dir = filepath.Dir(binaryName)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -85,7 +85,7 @@ func runBinary(binaryName string) error {
 	return nil
 }
 
-const version = "Simple 3.2024.10"
+const version = "Simple 0.0.4"
 
 func main() {
 	// Check if the --version flag is passed
@@ -158,7 +158,7 @@ func main() {
 	fmt.Printf("Build successful! Binary: %s\n", binaryName)
 
 	// Step 3: Run the binary
-	err = runBinary(binaryName)
+	err = runBinary(filepath.Join(outputDir, filepath.Base(binaryName)))
 	if err != nil {
 		fmt.Println("Error:", err)
 		return

@@ -1,6 +1,6 @@
-import "time"
+import time
 
-start = time.Now()
+start_time = time.time()
 
 my_integer = 1
 my_float = 1.5
@@ -24,7 +24,7 @@ print()
 
 
 print("Counting from 1 to 10:")
-for i in 10:
+for i in range(10):
     print(i+1)
 print()
 
@@ -32,11 +32,8 @@ x = 10
 print("Counting down from 10")
 while x > 0:
     print(x)
-	x = x - 1
-
-
+    x = x - 1
 
 ######################
-elapsed = time.Since(start).Seconds()
-fmt.Printf("Elapsed time: %.8f seconds\n", elapsed)
-
+elapsed_time = time.time() - start_time
+print(f"Elapsed time: {elapsed_time:.8f} seconds")
