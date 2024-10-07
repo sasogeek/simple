@@ -149,6 +149,8 @@ func (cg *CodeGenerator) generateFunction(file *os.File, fn *parser.FunctionLite
 	}
 
 	// Determine return type
+	// expects indicates if the function expects a return value
+	// done indicates whether it's been handled
 	returnType := ""
 	cg.Returns["currentFunc"] = map[string]bool{"expects": false, "done": false}
 
@@ -163,6 +165,8 @@ func (cg *CodeGenerator) generateFunction(file *os.File, fn *parser.FunctionLite
 		fmt.Fprintf(file, "func %s(%s) {\n", fn.Name.Value, strings.Join(params, ", "))
 	}
 	cg.indentLevel++
+	prevTable := cg.analyzer.CurrentTable
+	cg.analyzer.CurrentTable = cg.analyzer.SymbolTables.Tables[fn.Name.Value]
 	cg.generateBlockStatement(file, fn.Body)
 	cg.indentLevel--
 	if returnType != "" {
@@ -176,6 +180,7 @@ func (cg *CodeGenerator) generateFunction(file *os.File, fn *parser.FunctionLite
 		fmt.Fprintln(file, "}\n")
 	}
 	fmt.Fprintln(file) // Add an empty line for readability
+	cg.analyzer.CurrentTable = prevTable
 	cg.Returns["currentFunc"]["expects"] = false
 	cg.Returns["currentFunc"]["done"] = false
 }
@@ -185,13 +190,14 @@ func (cg *CodeGenerator) generateAssignmentStatement(file *os.File, as *parser.A
 	// Get the variable's type from the symbol table
 	symbol, found := cg.analyzer.CurrentTable.Resolve(as.Name.Value)
 	if !found {
-		symbol, found = cg.analyzer.GlobalTable.Resolve(as.Name.Value)
-		if !found {
-			fmt.Fprintf(os.Stderr, "Undefined variable: %s\n", as.Name.Value)
-			return
-		}
+		//symbol, found = cg.analyzer.GlobalTable.Resolve(as.Name.Value)
+		//if !found {
+		fmt.Fprintf(os.Stderr, "Undefined variable: %s\n", as.Name.Value)
+		return
+		//}
 
 	}
+	fmt.Println("found", symbol.Name, symbol.Scope)
 	if symbol.Metadata == nil {
 		//varType := symbol.Type.String()
 		fmt.Fprintf(file, "%s := ", as.Name.Value)

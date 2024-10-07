@@ -22,13 +22,19 @@ type Symbol struct {
 type SymbolTable struct {
 	Symbols map[string]*Symbol
 	Outer   *SymbolTable
+	Name    string
+}
+
+type SymbolTables struct {
+	Tables map[string]*SymbolTable
 }
 
 // NewSymbolTable creates a new symbol table.
-func NewSymbolTable(outer *SymbolTable) *SymbolTable {
+func NewSymbolTable(outer *SymbolTable, name string) *SymbolTable {
 	return &SymbolTable{
 		Symbols: make(map[string]*Symbol),
 		Outer:   outer,
+		Name:    name,
 	}
 }
 
@@ -58,6 +64,7 @@ type ExternalInterface struct {
 type Analyzer struct {
 	GlobalTable         *SymbolTable
 	CurrentTable        *SymbolTable
+	SymbolTables        *SymbolTables
 	errors              []string
 	importedPackages    map[string]*packages.Package
 	WrapFunctionCalls   map[*parser.CallExpression][]WrapperInfo
@@ -68,10 +75,11 @@ type Analyzer struct {
 
 // NewAnalyzer creates a new semantic analyzer.
 func NewAnalyzer() *Analyzer {
-	global := NewSymbolTable(nil)
+	global := NewSymbolTable(nil, "global")
 	analyzer := &Analyzer{
 		GlobalTable:         global,
 		CurrentTable:        global,
+		SymbolTables:        &SymbolTables{Tables: map[string]*SymbolTable{"global": global}},
 		errors:              []string{},
 		importedPackages:    make(map[string]*packages.Package),
 		WrapFunctionCalls:   make(map[*parser.CallExpression][]WrapperInfo),
@@ -230,38 +238,6 @@ func (a *Analyzer) Analyze(node parser.Node) {
 		}
 	case *parser.WhileStatement:
 		a.Analyze(n.Condition)
-		//switch n.Condition.(type) {
-		//case *parser.InfixExpression:
-		//	a.Analyze(n.Condition.(*parser.InfixExpression).Left)
-		//	switch n.Condition.(*parser.InfixExpression).Left.(type) {
-		//	case *parser.Identifier:
-		//
-		//	}
-		//	//symbol, found := a.CurrentTable.Resolve(n.Condition.(*parser.InfixExpression).Left.)
-		//	//if found {
-		//	//	switch symbol.Type.(type) {
-		//	//	case *parser.BasicType:
-		//	//		a.CurrentTable.Define(n.Condition.(*parser.Identifier).Value, &Symbol{
-		//	//			Name:  n.Condition.(*parser.Identifier).Value,
-		//	//			Type:  &parser.BasicType{Name: "int"}, // Initial type
-		//	//			Scope: "local",
-		//	//		})
-		//	//	default:
-		//	//		a.CurrentTable.Define(n.Condition.(*parser.Identifier).Value, &Symbol{
-		//	//			Name:  n.Condition.(*parser.Identifier).Value,
-		//	//			Type:  &parser.BasicType{Name: "interface{}"}, // Initial type
-		//	//			Scope: "local",
-		//	//		})
-		//	//	}
-		//	//
-		//	//} else {
-		//	//	a.CurrentTable.Define(n.Condition.(*parser.Identifier).Value, &Symbol{
-		//	//		Name:  n.Condition.(*parser.Identifier).Value,
-		//	//		Type:  &parser.BasicType{Name: "interface{}"}, // Initial type
-		//	//		Scope: "local",
-		//	//	})
-		//	//}
-		//}
 		a.Analyze(n.Body)
 	case *parser.ForStatement:
 		a.Analyze(n.Iterable)
@@ -283,7 +259,6 @@ func (a *Analyzer) Analyze(node parser.Node) {
 						Scope: "local",
 					})
 				}
-
 			} else {
 				a.CurrentTable.Define(n.Variable.Value, &Symbol{
 					Name:  n.Variable.Value,
@@ -311,18 +286,19 @@ func (a *Analyzer) Analyze(node parser.Node) {
 // handleFunctionLiteral processes function definitions.
 func (a *Analyzer) handleFunctionLiteral(fl *parser.FunctionLiteral) {
 	// Initialize function type with parameter types and 'void' return type
+	// and define the function in the global table
 	paramTypes := make([]parser.Type, len(fl.Parameters))
 	params := make([]parser.Identifier, len(fl.Parameters))
-	for i := range fl.Parameters {
-		paramTypes[i] = &parser.BasicType{Name: "interface{}"} // Initial type
-		params[i] = *fl.Parameters[i]
-		paramSymbol := &Symbol{
-			Name:  fl.Parameters[i].Value,
-			Type:  paramTypes[i],
-			Scope: fl.Name.Value,
-		}
-		a.CurrentTable.Define(paramSymbol.Name, paramSymbol)
-	}
+	//for i := range fl.Parameters {
+	//	paramTypes[i] = &parser.BasicType{Name: "interface{}"} // Initial type
+	//	params[i] = *fl.Parameters[i]
+	//	paramSymbol := &Symbol{
+	//		Name:  fl.Parameters[i].Value,
+	//		Type:  paramTypes[i],
+	//		Scope: fl.Name.Value,
+	//	}
+	//	a.CurrentTable.Define(paramSymbol.Name, paramSymbol)
+	//}
 
 	functionType := &parser.FunctionType{
 		Parameters:     params,
@@ -334,23 +310,24 @@ func (a *Analyzer) handleFunctionLiteral(fl *parser.FunctionLiteral) {
 	symbol := &Symbol{
 		Name:  fl.Name.Value,
 		Type:  functionType,
-		Scope: "global",
+		Scope: a.CurrentTable.Name,
 	}
 
 	// Create a types.Signature for the function
-	sig := a.createGoSignatureFromFunctionType(functionType)
-	if sig == nil {
-		a.errors = append(a.errors, fmt.Sprintf("Failed to create Go signature for function '%s'", fl.Name.Value))
-		return
-	}
-	symbol.GoType = sig
+	//sig := a.createGoSignatureFromFunctionType(functionType)
+	//if sig == nil {
+	//	a.errors = append(a.errors, fmt.Sprintf("Failed to create Go signature for function '%s'", fl.Name.Value))
+	//	return
+	//}
+	//symbol.GoType = sig
 
-	a.GlobalTable.Define(fl.Name.Value, symbol)
+	//a.GlobalTable.Define(fl.Name.Value, symbol)
 	a.CurrentTable.Define(fl.Name.Value, symbol)
 
 	// Create a new symbol table for the function scope
 	prevTable := a.CurrentTable
-	funcTable := NewSymbolTable(a.CurrentTable)
+	funcTable := NewSymbolTable(a.CurrentTable, fl.Name.Value)
+	a.SymbolTables.Tables[fl.Name.Value] = funcTable
 	a.CurrentTable = funcTable
 
 	// Define function parameters in the new scope
@@ -363,16 +340,13 @@ func (a *Analyzer) handleFunctionLiteral(fl *parser.FunctionLiteral) {
 		a.CurrentTable.Define(param.Value, &Symbol{
 			Name:   param.Value,
 			Type:   paramTypes[i],
-			Scope:  "local",
+			Scope:  fl.Name.Value,
 			GoType: paramType,
 		})
 	}
 
 	// Analyze the function body
 	a.Analyze(fl.Body)
-
-	// Restore the previous symbol table
-	a.CurrentTable = prevTable
 
 	// Infer parameter types based on usage
 	a.InferFunctionParameterTypes(fl, funcTable)
@@ -387,6 +361,9 @@ func (a *Analyzer) handleFunctionLiteral(fl *parser.FunctionLiteral) {
 		return
 	}
 	symbol.GoType = functionTypeInferred
+
+	// Restore the previous symbol table
+	a.CurrentTable = prevTable
 }
 
 // InferFunctionParameterTypes Infers and updates parameter types based on their usage.
@@ -484,10 +461,10 @@ func (a *Analyzer) handleAssignmentStatement(as *parser.AssignmentStatement) {
 	varType := a.InferExpressionType(as.Value, true)
 
 	// Determine the scope based on the current symbol table
-	scope := "local"
-	if a.CurrentTable == a.GlobalTable {
-		scope = "global"
-	}
+	scope := a.CurrentTable.Name
+	//if a.CurrentTable == a.GlobalTable {
+	//	scope = "global"
+	//}
 	// Assign the Inferred type to the variable
 	a.CurrentTable.Define(as.Name.Value, &Symbol{
 		Name:  as.Name.Value,
@@ -495,11 +472,11 @@ func (a *Analyzer) handleAssignmentStatement(as *parser.AssignmentStatement) {
 		Scope: scope,
 	})
 	// Assign the Inferred type to the variable
-	a.GlobalTable.Define(as.Name.Value, &Symbol{
-		Name:  as.Name.Value,
-		Type:  varType,
-		Scope: scope,
-	})
+	//a.GlobalTable.Define(as.Name.Value, &Symbol{
+	//	Name:  as.Name.Value,
+	//	Type:  varType,
+	//	Scope: scope,
+	//})
 }
 
 // handleCallExpression processes function calls.
@@ -545,7 +522,7 @@ func (a *Analyzer) handleCallExpression(ce *parser.CallExpression) {
 										for x, _ := range symbol.Type.(*parser.FunctionType).ParameterTypes {
 											symbol.Type.(*parser.FunctionType).ParameterTypes[x] = a.ExternalFuncs[fmt.Sprintf("%s.%s", ce.Function.(*parser.SelectorExpression).Left, ce.Function.(*parser.SelectorExpression).Selector)].ParameterTypes[i].(*parser.FunctionType).ParameterTypes[x]
 											a.CurrentTable.Define(arg.String(), symbol)
-											a.CurrentTable.Define(arg.String(), symbol)
+											//a.CurrentTable.Define(arg.String(), symbol)
 											param := symbol.Type.(*parser.FunctionType).Parameters[x]
 											//if _, exsts := a.CurrentTable.Resolve(param.Value); exsts {
 											paramSymbol := &Symbol{
@@ -553,7 +530,7 @@ func (a *Analyzer) handleCallExpression(ce *parser.CallExpression) {
 												Type: a.ExternalFuncs[fmt.Sprintf("%s.%s", ce.Function.(*parser.SelectorExpression).Left, ce.Function.(*parser.SelectorExpression).Selector)].ParameterTypes[i].(*parser.FunctionType).ParameterTypes[x],
 											}
 											a.CurrentTable.Define(param.Value, paramSymbol)
-											a.CurrentTable.Define(param.Value, paramSymbol)
+											//a.CurrentTable.Define(param.Value, paramSymbol)
 											//}
 										}
 									}
@@ -708,13 +685,13 @@ func (a *Analyzer) InferExpressionType(expr parser.Expression, reportErrors bool
 	case *parser.Identifier:
 		symbol, found := a.CurrentTable.Resolve(e.Value)
 		if !found {
-			symbol, found = a.GlobalTable.Resolve(e.Value)
-			if !found {
-				if reportErrors {
-					//a.errors = append(a.errors, fmt.Sprintf("Undefined identifier: %s", e.Value))
-				}
-				return &parser.BasicType{Name: "interface{}"}
-			}
+			//symbol, found = a.GlobalTable.Resolve(e.Value)
+			//if !found {
+			//	if reportErrors {
+			//a.errors = append(a.errors, fmt.Sprintf("Undefined identifier: %s", e.Value))
+			//}
+			//return &parser.BasicType{Name: "interface{}"}
+			//}
 		}
 		return symbol.Type
 	case *parser.CallExpression:
