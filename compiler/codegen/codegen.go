@@ -54,7 +54,7 @@ func (cg *CodeGenerator) GenerateCode(program *parser.Program) error {
 	// Generate code for global statements (functions)
 	for _, stmt := range program.Statements {
 		if _, ok := stmt.(*parser.FunctionLiteral); ok {
-			cg.generateFunction(mainFile, stmt.(*parser.FunctionLiteral))
+			cg.generateFunction(mainFile, stmt.(*parser.FunctionLiteral), cg.analyzer.CurrentTable)
 		}
 	}
 
@@ -63,7 +63,7 @@ func (cg *CodeGenerator) GenerateCode(program *parser.Program) error {
 	cg.indentLevel++
 	for _, stmt := range program.Statements {
 		if _, ok := stmt.(*parser.FunctionLiteral); !ok {
-			cg.generateStatement(mainFile, stmt)
+			cg.generateStatement(mainFile, stmt, cg.analyzer.CurrentTable)
 		}
 	}
 	cg.indentLevel--
@@ -108,9 +108,9 @@ func (cg *CodeGenerator) isBuiltinUsed(name string, program *parser.Program) boo
 }
 
 // generateFunction generates Go code for a function definition.
-func (cg *CodeGenerator) generateFunction(file *os.File, fn *parser.FunctionLiteral) {
+func (cg *CodeGenerator) generateFunction(file *os.File, fn *parser.FunctionLiteral, prevSymbolTable *semantic.SymbolTable) {
 	// Get the function symbol from the symbol table
-	symbol, ok := cg.analyzer.GlobalTable.Resolve(fn.Name.Value)
+	symbol, ok := cg.analyzer.CurrentTable.Resolve(fn.Name.Value)
 	if !ok {
 		fmt.Fprintf(os.Stderr, "Undefined function: %s\n", fn.Name.Value)
 		return
@@ -158,22 +158,57 @@ func (cg *CodeGenerator) generateFunction(file *os.File, fn *parser.FunctionLite
 		returnType = functionType.ReturnType.String()
 		cg.Returns["currentFunc"]["expects"] = true
 	}
+	cg.writeIndent(file)
+	functionSymbol, ok := prevSymbolTable.Resolve(cg.analyzer.CurrentTable.Name)
+	if ok {
+		switch functionSymbol.Type.(type) {
+		case *parser.FunctionType:
+			if returnType != "" {
+				if functionSymbol.Metadata == nil {
+					fmt.Fprintf(file, "%s := func(%s) %s {\n", fn.Name.Value, strings.Join(params, ", "), returnType)
+					functionSymbol.Metadata = map[string]any{"set": true}
+				} else {
+					fmt.Fprintf(file, "%s = func(%s) %s {\n", fn.Name.Value, strings.Join(params, ", "), returnType)
+					functionSymbol.Metadata = map[string]any{"set": true}
+				}
 
-	if returnType != "" {
-		fmt.Fprintf(file, "func %s(%s) %s {\n", fn.Name.Value, strings.Join(params, ", "), returnType)
+			} else {
+				if functionSymbol.Metadata == nil {
+					fmt.Fprintf(file, "%s := func(%s) {\n", fn.Name.Value, strings.Join(params, ", "))
+					functionSymbol.Metadata = map[string]any{"set": true}
+				} else {
+					fmt.Fprintf(file, "%s = func(%s) {\n", fn.Name.Value, strings.Join(params, ", "))
+					functionSymbol.Metadata = map[string]any{"set": true}
+				}
+			}
+		default:
+			if returnType != "" {
+				fmt.Fprintf(file, "func %s(%s) %s {\n", fn.Name.Value, strings.Join(params, ", "), returnType)
+			} else {
+				fmt.Fprintf(file, "func %s(%s) {\n", fn.Name.Value, strings.Join(params, ", "))
+			}
+		}
 	} else {
-		fmt.Fprintf(file, "func %s(%s) {\n", fn.Name.Value, strings.Join(params, ", "))
+		if returnType != "" {
+			fmt.Fprintf(file, "func %s(%s) %s {\n", fn.Name.Value, strings.Join(params, ", "), returnType)
+		} else {
+			fmt.Fprintf(file, "func %s(%s) {\n", fn.Name.Value, strings.Join(params, ", "))
+		}
 	}
+
 	cg.indentLevel++
 	prevTable := cg.analyzer.CurrentTable
 	cg.analyzer.CurrentTable = cg.analyzer.SymbolTables.Tables[fn.Name.Value]
-	cg.generateBlockStatement(file, fn.Body)
+	cg.generateBlockStatement(file, fn.Body, prevTable)
 	cg.indentLevel--
+	cg.writeIndent(file)
 	if returnType != "" {
 		if cg.Returns["currentFunc"]["expects"] && cg.Returns["currentFunc"]["done"] {
 			fmt.Fprintf(file, "}\n")
-		} else {
+		} else if cg.Returns["currentFunc"]["expects"] && !cg.Returns["currentFunc"]["done"] {
 			fmt.Fprintf(file, "return interface{}(0)}\n", returnType)
+		} else {
+			fmt.Fprintf(file, "}\n")
 		}
 
 	} else {
@@ -214,7 +249,7 @@ func (cg *CodeGenerator) generateAssignmentStatement(file *os.File, as *parser.A
 }
 
 // generateStatement generates Go code for a statement.
-func (cg *CodeGenerator) generateStatement(file *os.File, stmt parser.Statement) {
+func (cg *CodeGenerator) generateStatement(file *os.File, stmt parser.Statement, prevSymbolTable *semantic.SymbolTable) {
 	switch s := stmt.(type) {
 	case *parser.ExpressionStatement:
 		if s != nil {
@@ -234,11 +269,13 @@ func (cg *CodeGenerator) generateStatement(file *os.File, stmt parser.Statement)
 		}
 		fmt.Fprintln(file)
 	case *parser.IfStatement:
-		cg.generateIfStatement(file, s)
+		cg.generateIfStatement(file, s, prevSymbolTable)
 	case *parser.WhileStatement:
-		cg.generateWhileStatement(file, s)
+		cg.generateWhileStatement(file, s, prevSymbolTable)
 	case *parser.ForStatement:
-		cg.generateForStatement(file, s)
+		cg.generateForStatement(file, s, prevSymbolTable)
+	case *parser.FunctionLiteral:
+		cg.generateFunction(file, s, prevSymbolTable)
 	default:
 		// Handle other statements as needed
 	}
@@ -659,28 +696,28 @@ func (cg *CodeGenerator) needsTypeConversion(argType, expectedType parser.Type) 
 }
 
 // generateBlockStatement generates Go code for a block of statements.
-func (cg *CodeGenerator) generateBlockStatement(file *os.File, block *parser.BlockStatement) {
+func (cg *CodeGenerator) generateBlockStatement(file *os.File, block *parser.BlockStatement, prevSymbolTable *semantic.SymbolTable) {
 	if block != nil {
 		for _, stmt := range block.Statements {
-			cg.generateStatement(file, stmt)
+			cg.generateStatement(file, stmt, prevSymbolTable)
 		}
 	}
 }
 
 // generateIfStatement generates Go code for an if statement.
-func (cg *CodeGenerator) generateIfStatement(file *os.File, is *parser.IfStatement) {
+func (cg *CodeGenerator) generateIfStatement(file *os.File, is *parser.IfStatement, prevSymbolTable *semantic.SymbolTable) {
 	cg.writeIndent(file)
 	fmt.Fprint(file, "if ")
 	cg.generateExpression(file, is.Condition)
 	fmt.Fprintln(file, " {")
 	cg.indentLevel++
-	cg.generateBlockStatement(file, is.Consequence)
+	cg.generateBlockStatement(file, is.Consequence, prevSymbolTable)
 	cg.indentLevel--
 	cg.writeIndent(file)
 	if is.Alternative != nil {
 		fmt.Fprintln(file, "} else {")
 		cg.indentLevel++
-		cg.generateBlockStatement(file, is.Alternative)
+		cg.generateBlockStatement(file, is.Alternative, prevSymbolTable)
 		cg.indentLevel--
 		cg.writeIndent(file)
 		fmt.Fprintln(file, "}")
@@ -690,20 +727,20 @@ func (cg *CodeGenerator) generateIfStatement(file *os.File, is *parser.IfStateme
 }
 
 // generateWhileStatement generates Go code for a while loop.
-func (cg *CodeGenerator) generateWhileStatement(file *os.File, ws *parser.WhileStatement) {
+func (cg *CodeGenerator) generateWhileStatement(file *os.File, ws *parser.WhileStatement, prevSymbolTable *semantic.SymbolTable) {
 	cg.writeIndent(file)
 	fmt.Fprint(file, "for ")
 	cg.generateExpression(file, ws.Condition)
 	fmt.Fprintln(file, " {")
 	cg.indentLevel++
-	cg.generateBlockStatement(file, ws.Body)
+	cg.generateBlockStatement(file, ws.Body, prevSymbolTable)
 	cg.indentLevel--
 	cg.writeIndent(file)
 	fmt.Fprintln(file, "}")
 }
 
 // generateForStatement generates Go code for a for loop.
-func (cg *CodeGenerator) generateForStatement(file *os.File, fs *parser.ForStatement) {
+func (cg *CodeGenerator) generateForStatement(file *os.File, fs *parser.ForStatement, prevSymbolTable *semantic.SymbolTable) {
 	cg.writeIndent(file)
 	switch fs.Iterable.(type) {
 	case *parser.IntegerLiteral:
@@ -729,7 +766,7 @@ func (cg *CodeGenerator) generateForStatement(file *os.File, fs *parser.ForState
 	cg.generateExpression(file, fs.Iterable)
 	fmt.Fprintln(file, " {")
 	cg.indentLevel++
-	cg.generateBlockStatement(file, fs.Body)
+	cg.generateBlockStatement(file, fs.Body, prevSymbolTable)
 	cg.indentLevel--
 	cg.writeIndent(file)
 	fmt.Fprintln(file, "}")

@@ -390,7 +390,7 @@ func (a *Analyzer) InferFunctionParameterTypes(fl *parser.FunctionLiteral, funcT
 	a.CurrentTable = prevTable
 
 	// Update the function's parameter types in the symbol table
-	functionSymbol, _ := a.GlobalTable.Resolve(fl.Name.Value)
+	functionSymbol, _ := a.CurrentTable.Resolve(fl.Name.Value)
 	functionType, ok := functionSymbol.Type.(*parser.FunctionType)
 	if !ok {
 		return
