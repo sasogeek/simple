@@ -444,7 +444,7 @@ func (cg *CodeGenerator) generateInfixExpression(file *os.File, ie *parser.Infix
 				fmt.Fprint(file, ")")
 			}
 
-			fmt.Fprint(file, " + ")
+			fmt.Fprint(file, fmt.Sprintf(" %s ", ie.Operator))
 
 			// Convert right side to string
 			switch right := ie.Right.(type) {

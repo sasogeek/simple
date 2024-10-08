@@ -77,8 +77,8 @@ var keywords = map[string]TokenType{
 	"in":     TokenKeyword,
 	"import": TokenKeyword,
 	"print":  TokenIdentifier,
-	"true":   TokenTrue,
-	"false":  TokenFalse,
+	"True":   TokenTrue,
+	"False":  TokenFalse,
 	"None":   TokenKeyword,
 }
 
