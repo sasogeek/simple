@@ -2,6 +2,7 @@ package semantic
 
 import (
 	"fmt"
+	"github.com/google/uuid"
 	"go/token"
 	"go/types"
 	"golang.org/x/tools/go/packages"
@@ -211,36 +212,36 @@ func (a *Analyzer) initBuiltins() {
 }
 
 // Analyze performs semantic analysis on the AST node.
-func (a *Analyzer) Analyze(node parser.Node) {
+func (a *Analyzer) Analyze(node parser.Node, remainingStatements []parser.Statement) {
 	switch n := node.(type) {
 	case *parser.Program:
-		for _, stmt := range n.Statements {
-			a.Analyze(stmt)
+		for i, stmt := range n.Statements {
+			a.Analyze(stmt, n.Statements[i+1:])
 		}
 	case *parser.FunctionLiteral:
 		a.handleFunctionLiteral(n)
 	case *parser.ExpressionStatement:
 		if n != nil {
-			a.Analyze(n.Expression)
+			a.Analyze(n.Expression, remainingStatements)
 		}
 
 	case *parser.CallExpression:
 		a.handleCallExpression(n)
 	case *parser.AssignmentStatement:
-		a.handleAssignmentStatement(n)
+		a.handleAssignmentStatement(n, remainingStatements)
 	case *parser.Identifier:
 		a.handleIdentifier(n, false)
 	case *parser.IfStatement:
 		if n != nil {
-			a.Analyze(n.Condition)
-			a.Analyze(n.Consequence)
-			a.Analyze(n.Alternative)
+			a.Analyze(n.Condition, remainingStatements)
+			a.Analyze(n.Consequence, remainingStatements)
+			a.Analyze(n.Alternative, remainingStatements)
 		}
 	case *parser.WhileStatement:
-		a.Analyze(n.Condition)
-		a.Analyze(n.Body)
+		a.Analyze(n.Condition, remainingStatements)
+		a.Analyze(n.Body, remainingStatements)
 	case *parser.ForStatement:
-		a.Analyze(n.Iterable)
+		a.Analyze(n.Iterable, remainingStatements)
 		switch n.Iterable.(type) {
 		case *parser.Identifier:
 			symbol, found := a.CurrentTable.Resolve(n.Iterable.(*parser.Identifier).Value)
@@ -267,14 +268,14 @@ func (a *Analyzer) Analyze(node parser.Node) {
 				})
 			}
 		}
-		a.Analyze(n.Body)
+		a.Analyze(n.Body, remainingStatements)
 	case *parser.ReturnStatement:
 		if n.ReturnValue != nil {
-			a.Analyze(n.ReturnValue)
+			a.Analyze(n.ReturnValue, remainingStatements)
 		}
 	case *parser.BlockStatement:
-		for _, stmt := range n.Statements {
-			a.Analyze(stmt)
+		for i, stmt := range n.Statements {
+			a.Analyze(stmt, n.Statements[i+1:])
 		}
 	case *parser.ImportStatement:
 		a.handleImportStatement(n)
@@ -346,7 +347,7 @@ func (a *Analyzer) handleFunctionLiteral(fl *parser.FunctionLiteral) {
 	}
 
 	// Analyze the function body
-	a.Analyze(fl.Body)
+	a.Analyze(fl.Body, []parser.Statement{fl.Body})
 
 	// Infer parameter types based on usage
 	a.InferFunctionParameterTypes(fl, funcTable)
@@ -455,8 +456,8 @@ func (a *Analyzer) InferFunctionReturnType(body *parser.BlockStatement, funcTabl
 }
 
 // handleAssignmentStatement processes variable assignments.
-func (a *Analyzer) handleAssignmentStatement(as *parser.AssignmentStatement) {
-	a.Analyze(as.Value)
+func (a *Analyzer) handleAssignmentStatement(as *parser.AssignmentStatement, remainingStatements []parser.Statement) {
+	a.Analyze(as.Value, remainingStatements)
 	// Infer the type of the value
 	varType := a.InferExpressionType(as.Value, true)
 
@@ -466,17 +467,140 @@ func (a *Analyzer) handleAssignmentStatement(as *parser.AssignmentStatement) {
 	//	scope = "global"
 	//}
 	// Assign the Inferred type to the variable
-	a.CurrentTable.Define(as.Name.Value, &Symbol{
-		Name:  as.Name.Value,
-		Type:  varType,
-		Scope: scope,
-	})
+
+	// attempt to resolve it, if it doesn't exist, its the first time we're defining it.
+	// if it does exist and the type is different, rename it.
+	symbol, exists := a.CurrentTable.Resolve(as.Name.Value)
+	if !exists {
+		a.CurrentTable.Define(as.Name.Value, &Symbol{
+			Name:  as.Name.Value,
+			Type:  varType,
+			Scope: scope,
+		})
+	} else {
+		prevName := symbol.Name
+		if symbol.Type.TypeName() != varType.TypeName() {
+			vid := strings.Replace(uuid.NewString(), "-", "", -1)[:5]
+			as.Name.Value = as.Name.Value + vid
+			a.CurrentTable.Define(as.Name.Value, &Symbol{
+				Name:  as.Name.Value,
+				Type:  varType,
+				Scope: scope,
+			})
+			// Update any references to the variable in the remaining statements
+			for _, stmt := range remainingStatements {
+				a.updateVariableReferences(stmt, prevName, as.Name.Value)
+			}
+		}
+
+	}
+
 	// Assign the Inferred type to the variable
 	//a.GlobalTable.Define(as.Name.Value, &Symbol{
 	//	Name:  as.Name.Value,
 	//	Type:  varType,
 	//	Scope: scope,
 	//})
+}
+
+// updateVariableReferences updates references to a variable in a given statement to the new name.
+func (a *Analyzer) updateVariableReferences(stmt parser.Statement, oldName, newName string) {
+	switch n := stmt.(type) {
+	case *parser.AssignmentStatement:
+		if n != nil {
+			if n.Name.Value == oldName {
+				n.Name.Value = newName
+			}
+			a.updateVariableReferencesInExpression(n.Value, oldName, newName)
+		}
+	case *parser.ExpressionStatement:
+		if n != nil {
+			a.updateVariableReferencesInExpression(n.Expression, oldName, newName)
+		}
+	case *parser.IfStatement:
+		if n != nil {
+			a.updateVariableReferencesInExpression(n.Condition, oldName, newName)
+			a.updateVariableReferences(n.Consequence, oldName, newName)
+			if n.Alternative != nil {
+				a.updateVariableReferences(n.Alternative, oldName, newName)
+			}
+		}
+	case *parser.WhileStatement:
+		if n != nil {
+			a.updateVariableReferencesInExpression(n.Condition, oldName, newName)
+			a.updateVariableReferences(n.Body, oldName, newName)
+		}
+	case *parser.ForStatement:
+		if n != nil {
+			a.updateVariableReferencesInExpression(n.Iterable, oldName, newName)
+			a.updateVariableReferences(n.Body, oldName, newName)
+			if n.Variable != nil && n.Variable.Value == oldName {
+				n.Variable.Value = newName
+			}
+		}
+	case *parser.ReturnStatement:
+		if n != nil {
+			if n.ReturnValue != nil {
+				a.updateVariableReferencesInExpression(n.ReturnValue, oldName, newName)
+			}
+		}
+	case *parser.BlockStatement:
+		if n != nil {
+			for _, s := range n.Statements {
+				a.updateVariableReferences(s, oldName, newName)
+			}
+		}
+	case *parser.FunctionLiteral:
+		if n != nil {
+			for _, param := range n.Parameters {
+				if param.Value == oldName {
+					param.Value = newName
+				}
+			}
+			a.updateVariableReferences(n.Body, oldName, newName)
+		}
+	}
+}
+
+// updateVariableReferencesInExpression updates references to a variable in a given expression to the new name.
+func (a *Analyzer) updateVariableReferencesInExpression(expr parser.Expression, oldName, newName string) {
+	switch e := expr.(type) {
+	case *parser.Identifier:
+		if e.Value == oldName {
+			e.Value = newName
+		}
+	case *parser.InfixExpression:
+		a.updateVariableReferencesInExpression(e.Left, oldName, newName)
+		a.updateVariableReferencesInExpression(e.Right, oldName, newName)
+	case *parser.PrefixExpression:
+		a.updateVariableReferencesInExpression(e.Right, oldName, newName)
+	case *parser.CallExpression:
+		a.updateVariableReferencesInExpression(e.Function, oldName, newName)
+		for _, arg := range e.Arguments {
+			a.updateVariableReferencesInExpression(arg, oldName, newName)
+		}
+	case *parser.IndexExpression:
+		a.updateVariableReferencesInExpression(e.Left, oldName, newName)
+		a.updateVariableReferencesInExpression(e.Index, oldName, newName)
+	case *parser.SelectorExpression:
+		a.updateVariableReferencesInExpression(e.Left, oldName, newName)
+	case *parser.ArrayLiteral:
+		for _, elem := range e.Elements {
+			a.updateVariableReferencesInExpression(elem, oldName, newName)
+		}
+	case *parser.MapLiteral:
+		for key, value := range e.Pairs {
+			a.updateVariableReferencesInExpression(key, oldName, newName)
+			a.updateVariableReferencesInExpression(value, oldName, newName)
+		}
+	case *parser.FunctionLiteral:
+		for _, param := range e.Parameters {
+			if param.Value == oldName {
+				param.Value = newName
+			}
+		}
+		a.updateVariableReferences(e.Body, oldName, newName)
+	}
 }
 
 // handleCallExpression processes function calls.
@@ -487,7 +611,7 @@ func (a *Analyzer) handleCallExpression(ce *parser.CallExpression) {
 	case *parser.FunctionType:
 		ft := funcType.(*parser.FunctionType)
 		for i, arg := range ce.Arguments {
-			a.Analyze(arg)
+			a.Analyze(arg, []parser.Statement{})
 			argType := a.InferExpressionType(arg, true)
 			var prevType parser.Type
 			if i < len(ft.ParameterTypes) {
