@@ -232,7 +232,6 @@ func (cg *CodeGenerator) generateAssignmentStatement(file *os.File, as *parser.A
 		//}
 
 	}
-	fmt.Println("found", symbol.Name, symbol.Scope)
 	if symbol.Metadata == nil {
 		//varType := symbol.Type.String()
 		fmt.Fprintf(file, "%s := ", as.Name.Value)

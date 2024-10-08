@@ -215,22 +215,32 @@ func (a *Analyzer) initBuiltins() {
 func (a *Analyzer) Analyze(node parser.Node, remainingStatements []parser.Statement) {
 	switch n := node.(type) {
 	case *parser.Program:
-		for i, stmt := range n.Statements {
-			a.Analyze(stmt, n.Statements[i+1:])
+		if n != nil {
+			for i, stmt := range n.Statements {
+				a.Analyze(stmt, n.Statements[i+1:])
+			}
 		}
 	case *parser.FunctionLiteral:
-		a.handleFunctionLiteral(n)
+		if n != nil {
+			a.handleFunctionLiteral(n)
+		}
 	case *parser.ExpressionStatement:
 		if n != nil {
 			a.Analyze(n.Expression, remainingStatements)
 		}
 
 	case *parser.CallExpression:
-		a.handleCallExpression(n)
+		if n != nil {
+			a.handleCallExpression(n)
+		}
 	case *parser.AssignmentStatement:
-		a.handleAssignmentStatement(n, remainingStatements)
+		if n != nil {
+			a.handleAssignmentStatement(n, remainingStatements)
+		}
 	case *parser.Identifier:
-		a.handleIdentifier(n, false)
+		if n != nil {
+			a.handleIdentifier(n, false)
+		}
 	case *parser.IfStatement:
 		if n != nil {
 			a.Analyze(n.Condition, remainingStatements)
@@ -238,47 +248,55 @@ func (a *Analyzer) Analyze(node parser.Node, remainingStatements []parser.Statem
 			a.Analyze(n.Alternative, remainingStatements)
 		}
 	case *parser.WhileStatement:
-		a.Analyze(n.Condition, remainingStatements)
-		a.Analyze(n.Body, remainingStatements)
+		if n != nil {
+			a.Analyze(n.Condition, remainingStatements)
+			a.Analyze(n.Body, remainingStatements)
+		}
 	case *parser.ForStatement:
-		a.Analyze(n.Iterable, remainingStatements)
-		switch n.Iterable.(type) {
-		case *parser.Identifier:
-			symbol, found := a.CurrentTable.Resolve(n.Iterable.(*parser.Identifier).Value)
-			if found {
-				switch symbol.Type.(type) {
-				case *parser.BasicType:
-					a.CurrentTable.Define(n.Variable.Value, &Symbol{
-						Name:  n.Variable.Value,
-						Type:  &parser.BasicType{Name: "int"}, // Initial type
-						Scope: "local",
-					})
-				default:
+		if n != nil {
+			a.Analyze(n.Iterable, remainingStatements)
+			switch n.Iterable.(type) {
+			case *parser.Identifier:
+				symbol, found := a.CurrentTable.Resolve(n.Iterable.(*parser.Identifier).Value)
+				if found {
+					switch symbol.Type.(type) {
+					case *parser.BasicType:
+						a.CurrentTable.Define(n.Variable.Value, &Symbol{
+							Name:  n.Variable.Value,
+							Type:  &parser.BasicType{Name: "int"}, // Initial type
+							Scope: "local",
+						})
+					default:
+						a.CurrentTable.Define(n.Variable.Value, &Symbol{
+							Name:  n.Variable.Value,
+							Type:  &parser.BasicType{Name: "interface{}"}, // Initial type
+							Scope: "local",
+						})
+					}
+				} else {
 					a.CurrentTable.Define(n.Variable.Value, &Symbol{
 						Name:  n.Variable.Value,
 						Type:  &parser.BasicType{Name: "interface{}"}, // Initial type
 						Scope: "local",
 					})
 				}
-			} else {
-				a.CurrentTable.Define(n.Variable.Value, &Symbol{
-					Name:  n.Variable.Value,
-					Type:  &parser.BasicType{Name: "interface{}"}, // Initial type
-					Scope: "local",
-				})
 			}
+			a.Analyze(n.Body, remainingStatements)
 		}
-		a.Analyze(n.Body, remainingStatements)
 	case *parser.ReturnStatement:
-		if n.ReturnValue != nil {
+		if n != nil {
 			a.Analyze(n.ReturnValue, remainingStatements)
 		}
 	case *parser.BlockStatement:
-		for i, stmt := range n.Statements {
-			a.Analyze(stmt, n.Statements[i+1:])
+		if n != nil {
+			for i, stmt := range n.Statements {
+				a.Analyze(stmt, n.Statements[i+1:])
+			}
 		}
 	case *parser.ImportStatement:
-		a.handleImportStatement(n)
+		if n != nil {
+			a.handleImportStatement(n)
+		}
 	default:
 		// Handle other node types as needed
 	}
@@ -290,16 +308,16 @@ func (a *Analyzer) handleFunctionLiteral(fl *parser.FunctionLiteral) {
 	// and define the function in the global table
 	paramTypes := make([]parser.Type, len(fl.Parameters))
 	params := make([]parser.Identifier, len(fl.Parameters))
-	//for i := range fl.Parameters {
-	//	paramTypes[i] = &parser.BasicType{Name: "interface{}"} // Initial type
-	//	params[i] = *fl.Parameters[i]
-	//	paramSymbol := &Symbol{
-	//		Name:  fl.Parameters[i].Value,
-	//		Type:  paramTypes[i],
-	//		Scope: fl.Name.Value,
-	//	}
-	//	a.CurrentTable.Define(paramSymbol.Name, paramSymbol)
-	//}
+	for i := range fl.Parameters {
+		paramTypes[i] = &parser.BasicType{Name: "interface{}"} // Initial type
+		params[i] = *fl.Parameters[i]
+		paramSymbol := &Symbol{
+			Name:  fl.Parameters[i].Value,
+			Type:  paramTypes[i],
+			Scope: fl.Name.Value,
+		}
+		a.CurrentTable.Define(paramSymbol.Name, paramSymbol)
+	}
 
 	functionType := &parser.FunctionType{
 		Parameters:     params,
@@ -814,7 +832,7 @@ func (a *Analyzer) InferExpressionType(expr parser.Expression, reportErrors bool
 			//	if reportErrors {
 			//a.errors = append(a.errors, fmt.Sprintf("Undefined identifier: %s", e.Value))
 			//}
-			//return &parser.BasicType{Name: "interface{}"}
+			return &parser.BasicType{Name: "interface{}"}
 			//}
 		}
 		return symbol.Type
