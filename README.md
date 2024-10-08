@@ -4,6 +4,9 @@ Simple is an experimental programming language that compiles `.simple` files int
 
 This README will guide you through installing, using, and extending the Simple language.
 
+Join the community on Slack for the latest updates;
+[Join Slack](https://join.slack.com/t/simplecommunity/shared_invite/zt-2s32ctsx1-~kGgQvtwIlV39rCsR~ruug)
+
 ## Table of Contents
 
 - [Features](#features)
