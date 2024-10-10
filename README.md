@@ -122,8 +122,10 @@ cd hello_world
 
 ### Variables
 
-Variables in Simple are dynamically typed, meaning you can assign different types of values to variables without needing to declare the type.
-
+Variables in Simple are dynamically typed, meaning you can assign different types of values to variables without needing to declare the type,
+and you may reassign a variable a value of a different type.
+Rarely you may have to initialize a data structure if you want to use a go library function or method that expects
+a particular format. [See example 7 in the functions section.(decodedData)](#example-7-using-encodingjson-for-json-serialization-and-deserialization)
 ```python
 # String
 name = "Simple"
@@ -136,6 +138,12 @@ arr = [1, 2, 3]
 
 # Dictionary
 person = {"name": "Alice", "age": 30}
+
+my_variable = 100
+print(my_variable)
+my_variable = "hello"
+print(my_variable)
+
 ```
 
 ### Control Flow
