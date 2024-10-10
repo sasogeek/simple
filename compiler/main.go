@@ -94,7 +94,7 @@ func main() {
 		return
 	}
 
-	//filename := "test.simple"
+	//filename := "examples/test.simple"
 	filename := os.Args[1]
 	content, err := os.ReadFile(filename)
 	if err != nil {
@@ -115,13 +115,13 @@ func main() {
 	analyzer := semantic.NewAnalyzer()
 
 	// Perform Semantic Analysis
-	analyzer.Analyze(ast)
+	analyzer.Analyze(ast, []parser.Statement{})
 
 	// Initialize Transformer
 	transformer := transformer.NewTransformer(analyzer)
 
 	// Perform Transformation
-	transformer.Transform(ast)
+	transformer.Transform(ast, ast)
 
 	// Code Generation
 	binaryName := filename[:len(filename)-7]
@@ -130,7 +130,7 @@ func main() {
 	os.MkdirAll(outputDir, os.ModePerm)
 
 	// Initialize Code Generator
-	cg := codegen.NewCodeGenerator(outputDir, analyzer)
+	cg := codegen.NewCodeGenerator(outputDir, analyzer, true)
 
 	// Generate Go Code
 	err = cg.GenerateCode(ast)

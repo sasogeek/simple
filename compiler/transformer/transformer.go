@@ -19,29 +19,125 @@ func NewTransformer(analyzer *semantic.Analyzer) *Transformer {
 	}
 }
 
-func (t *Transformer) Transform(node parser.Node) {
+func (t *Transformer) Transform(node parser.Node, rNode parser.Node) {
 	switch n := node.(type) {
 	case *parser.Program:
 		for _, stmt := range n.Statements {
-			t.Transform(stmt)
+			t.Transform(stmt, rNode)
 		}
 	case *parser.ExpressionStatement:
 		if n != nil {
-			t.Transform(n.Expression)
+			t.Transform(n.Expression, rNode)
 		}
 	case *parser.CallExpression:
-		t.handleCallExpression(n)
+		t.handleCallExpression(n, rNode)
 	case *parser.FunctionLiteral:
-		t.Transform(n.Body)
+		prevTable := t.analyzer.CurrentTable
+		t.analyzer.CurrentTable = t.analyzer.SymbolTables.Tables[n.Name.Value]
+		t.Transform(n.Body, rNode)
+		t.analyzer.CurrentTable = prevTable
 	case *parser.BlockStatement:
 		for _, stmt := range n.Statements {
-			t.Transform(stmt)
+			t.Transform(stmt, rNode)
 		}
+	case *parser.AssignmentStatement:
+		t.handleAssignmentStatement(n, rNode)
 		// Handle other node types as needed
+	case *parser.ReturnStatement:
+		t.handleReturnStatement(n, rNode)
 	}
 }
 
-func (t *Transformer) handleCallExpression(ce *parser.CallExpression) {
+func (t *Transformer) handleReturnStatement(rs *parser.ReturnStatement, rNode parser.Node) {
+	// Transform the return value
+	t.Transform(rs.ReturnValue, rNode)
+
+	// Infer the type of the return value
+	returnTypes := t.analyzer.InferExpressionTypes(rs.ReturnValue, true)
+
+	// Update the enclosing function's return types
+	enclosingFunc := t.analyzer.CurrentTable.Name
+	funcSymbol, exists := t.analyzer.CurrentTable.Resolve(enclosingFunc)
+	if exists {
+		if funcType, ok := funcSymbol.Type.(*parser.FunctionType); ok {
+			funcType.ReturnTypes = returnTypes
+		}
+	}
+
+}
+
+func (t *Transformer) handleAssignmentStatement(as *parser.AssignmentStatement, rNode parser.Node) {
+	// Transform the RHS expression
+	t.Transform(as.Value, rNode)
+
+	// Infer the type(s) of the RHS expression(s)
+	varTypes := t.analyzer.InferExpressionTypes(as.Value, true) // Returns []parser.Type
+
+	// Update the symbol table and variable types
+	for i, leftExpr := range as.Left {
+		var currentVarType parser.Type
+		if i < len(varTypes) {
+			currentVarType = varTypes[i]
+		} else {
+			// Handle the case where there are fewer types than variables
+			currentVarType = &parser.BasicType{Name: "any"}
+		}
+
+		switch expr := leftExpr.(type) {
+		case *parser.Identifier:
+			name := expr.Value
+			symbol, exists := t.analyzer.CurrentTable.Resolve(name)
+			if !exists {
+				// Define the new variable in the symbol table
+				t.analyzer.CurrentTable.Define(name, &semantic.Symbol{
+					Name:  name,
+					Type:  currentVarType,
+					Scope: t.analyzer.CurrentTable.Name,
+				})
+			} else {
+				// Update the symbol's type
+				symbol.Type = currentVarType
+			}
+			t.updateFunctionParameterTypes(name, currentVarType, rNode)
+			// Handle other types of LHS expressions if needed
+		}
+
+		// Check if the LHS variable is used in function calls
+
+	}
+}
+
+func (t *Transformer) updateFunctionParameterTypes(varName string, varType parser.Type, rNode parser.Node) {
+	// Iterate over all function calls in the program
+	parser.Inspect(rNode, func(node parser.Node) bool {
+		callExpr, ok := node.(*parser.CallExpression)
+		if !ok {
+			return true
+		}
+
+		// Check if the variable is used as an argument
+		for i, arg := range callExpr.Arguments {
+			if ident, ok := arg.(*parser.Identifier); ok && ident.Value == varName {
+				// Retrieve the function symbol
+				funcName := callExpr.Function.String()
+				funcSymbol, exists := t.analyzer.CurrentTable.Resolve(funcName)
+				if !exists {
+					continue
+				}
+
+				// Update the parameter type
+				if funcType, ok := funcSymbol.Type.(*parser.FunctionType); ok {
+					if i < len(funcType.ParameterTypes) {
+						funcType.ParameterTypes[i] = varType
+					}
+				}
+			}
+		}
+		return true
+	})
+}
+
+func (t *Transformer) handleCallExpression(ce *parser.CallExpression, rNode parser.Node) {
 	// Check if the function is a SelectorExpression (e.g., pkg.Func)
 	if selExpr, ok := ce.Function.(*parser.SelectorExpression); ok {
 		pkgName := selExpr.Left.String()
@@ -95,25 +191,27 @@ func (t *Transformer) handleCallExpression(ce *parser.CallExpression) {
 		if extFuncType, exists := t.analyzer.ExternalFuncs[fqFuncName]; exists {
 			// Perform type conversion for arguments
 			for i, arg := range ce.Arguments {
+				if i < len(extFuncType.ParameterTypes) {
+					argType := t.analyzer.InferExpressionTypes(arg, true)[0]
+					expectedType := extFuncType.ParameterTypes[i]
 
-				argType := t.analyzer.InferExpressionType(arg, true)
-				expectedType := extFuncType.ParameterTypes[i]
-
-				// Check if type conversion is needed
-				if argType.String() != expectedType.String() {
-					// Insert code or modify the AST to perform type conversion
-					ce.Arguments[i] = t.wrapWithTypeConversion(arg, expectedType)
+					// Check if type conversion is needed
+					if argType.String() != expectedType.String() {
+						// Insert code or modify the AST to perform type conversion
+						ce.Arguments[i] = t.wrapWithTypeConversion(arg, expectedType)
+					}
 				}
+
 			}
 
 			// Store the expected return type for code generation
-			t.analyzer.ExpectedReturnTypes[ce] = extFuncType.ReturnType
+			t.analyzer.ExpectedReturnTypes[ce] = extFuncType.ReturnTypes
 		}
 	}
 
 	// Recursively transform arguments
 	for _, arg := range ce.Arguments {
-		t.Transform(arg)
+		t.Transform(arg, rNode)
 	}
 }
 
@@ -138,7 +236,7 @@ func (t *Transformer) expressionToString(expr parser.Expression) string {
 }
 
 func (t *Transformer) wrapWithTypeConversion(arg parser.Expression, targetType parser.Type) parser.Expression {
-	argType := t.analyzer.InferExpressionType(arg, true)
+	argType := t.analyzer.InferExpressionTypes(arg, true)[0]
 	if t.analyzer.AreTypesCompatible(argType, targetType) {
 		return arg
 	}

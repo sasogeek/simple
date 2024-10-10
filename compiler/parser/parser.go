@@ -96,9 +96,11 @@ func (mt *MapType) String() string {
 
 // MapLiteral represents a map/dictionary literal in the code.
 type MapLiteral struct {
-	Token lexer.Token // The '{' token
-	Pairs map[Expression]Expression
-	Type  Type
+	Token     lexer.Token // The '{' token
+	Pairs     map[Expression]Expression
+	Type      Type
+	KeyType   Type
+	ValueType Type
 }
 
 func (ml *MapLiteral) expressionNode()      {}
@@ -122,7 +124,7 @@ func (bt *BuiltinType) String() string {
 type FunctionType struct {
 	Parameters     []Identifier
 	ParameterTypes []Type
-	ReturnType     Type
+	ReturnTypes    []Type
 }
 
 func (ft *FunctionType) TypeName() string {
@@ -134,11 +136,16 @@ func (ft *FunctionType) String() string {
 	for _, p := range ft.ParameterTypes {
 		params = append(params, p.String())
 	}
-	if ft.ReturnType != nil {
-		return fmt.Sprintf("func(%s) %s", strings.Join(params, ", "), ft.ReturnType.String())
-	}
-	return fmt.Sprintf("func(%s) %s", strings.Join(params, ", "), nil)
 
+	if len(ft.ReturnTypes) > 0 {
+		returnTypes := []string{}
+		for _, r := range ft.ReturnTypes {
+			returnTypes = append(returnTypes, r.String())
+		}
+		return fmt.Sprintf("func(%s) (%s)", strings.Join(params, ", "), strings.Join(returnTypes, ", "))
+	}
+
+	return fmt.Sprintf("func(%s)", strings.Join(params, ", "))
 }
 
 // TypeConversionExpression represents a type conversion.
@@ -414,7 +421,7 @@ func (fs *ForStatement) String() string {
 // AssignmentStatement represents a variable assignment.
 type AssignmentStatement struct {
 	Token lexer.Token
-	Name  *Identifier
+	Left  []Expression
 	Value Expression
 }
 
@@ -422,7 +429,12 @@ func (as *AssignmentStatement) statementNode()       {}
 func (as *AssignmentStatement) TokenLiteral() string { return as.Token.Literal }
 func (as *AssignmentStatement) String() string {
 	var out strings.Builder
-	out.WriteString(as.Name.String())
+	for i, name := range as.Left {
+		if i > 0 {
+			out.WriteString(", ")
+		}
+		out.WriteString(name.String())
+	}
 	out.WriteString(" = ")
 	if as.Value != nil {
 		out.WriteString(as.Value.String())
@@ -434,6 +446,7 @@ func (as *AssignmentStatement) String() string {
 type ImportStatement struct {
 	Token          lexer.Token
 	ImportedModule *StringLiteral
+	IsSimpleImport bool
 }
 
 func (is *ImportStatement) statementNode()       {}
@@ -444,6 +457,56 @@ func (is *ImportStatement) String() string {
 	out.WriteString(is.ImportedModule.String())
 	return out.String()
 }
+
+// DeferStatement represents an import statement.
+type DeferStatement struct {
+	Token      lexer.Token
+	Expression Expression
+}
+
+func (ds *DeferStatement) statementNode()       {}
+func (ds *DeferStatement) TokenLiteral() string { return ds.Token.Literal }
+func (ds *DeferStatement) String() string {
+	var out strings.Builder
+	out.WriteString("defer ")
+	out.WriteString(ds.Expression.String())
+	return out.String()
+}
+
+// GoStatement represents an import statement.
+type GoStatement struct {
+	Token      lexer.Token
+	Expression Expression
+}
+
+func (gs *GoStatement) statementNode()       {}
+func (gs *GoStatement) TokenLiteral() string { return gs.Token.Literal }
+func (gs *GoStatement) String() string {
+	var out strings.Builder
+	out.WriteString("go ")
+	out.WriteString(gs.Expression.String())
+	return out.String()
+}
+
+// DeferLiteral represents a string literal.
+type DeferLiteral struct {
+	Token lexer.Token
+	Value string
+}
+
+func (dl *DeferLiteral) expressionNode()      {}
+func (dl *DeferLiteral) TokenLiteral() string { return dl.Token.Literal }
+func (dl *DeferLiteral) String() string       { return "\"" + dl.Value + "\"" }
+
+// GoLiteral represents a string literal.
+type GoLiteral struct {
+	Token lexer.Token
+	Value string
+}
+
+func (gl *GoLiteral) expressionNode()      {}
+func (gl *GoLiteral) TokenLiteral() string { return gl.Token.Literal }
+func (gl *GoLiteral) String() string       { return "\"" + gl.Value + "\"" }
 
 // InfixExpression represents an infix expression.
 type InfixExpression struct {
@@ -580,7 +643,6 @@ func NewParser(l *lexer.Lexer) *Parser {
 	// Register prefix parsers.
 	p.registerPrefix(lexer.TokenIdentifier, p.parseIdentifier)
 	p.registerPrefix(lexer.TokenNumber, p.parseIntegerLiteral)
-	p.registerPrefix(lexer.TokenNumber, p.parseIntegerLiteral)
 	p.registerPrefix(lexer.TokenString, p.parseStringLiteral)
 	p.registerPrefix(lexer.TokenBang, p.parsePrefixExpression)
 	p.registerPrefix(lexer.TokenMinus, p.parsePrefixExpression)
@@ -589,6 +651,8 @@ func NewParser(l *lexer.Lexer) *Parser {
 	p.registerPrefix(lexer.TokenFalse, p.parseBooleanLiteral)
 	p.registerPrefix(lexer.TokenBracketOpen, p.parseArrayLiteral)
 	p.registerPrefix(lexer.TokenBraceOpen, p.parseMapLiteral)
+	p.registerPrefix(lexer.TokenDefer, p.parseDeferLiteral)
+	p.registerPrefix(lexer.TokenGo, p.parseGoLiteral)
 
 	// Register infix parsers.
 	p.registerInfix(lexer.TokenPlus, p.parseInfixExpression)
@@ -641,18 +705,37 @@ func (p *Parser) parseArrayLiteral() Expression {
 
 func (p *Parser) parseMapLiteral() Expression {
 	m := &MapLiteral{
-		Token: p.curToken,
-		Pairs: make(map[Expression]Expression),
+		Token:     p.curToken,
+		Pairs:     make(map[Expression]Expression),
+		KeyType:   nil,
+		ValueType: nil,
 	}
+
+	keyTypes := []Type{}
+	valueTypes := []Type{}
 
 	if p.peekToken.Type == lexer.TokenBraceClose {
 		p.nextToken()
+		// Empty map, default key and value types to any
+		anyType := &BasicType{Name: "any"}
+		m.KeyType = anyType
+		m.ValueType = anyType
+		m.Type = &MapType{
+			KeyType:   m.KeyType,
+			ValueType: m.ValueType,
+		}
 		return m
 	}
 
 	for {
 		p.nextToken()
 		key := p.parseExpression(LOWEST)
+		if key == nil {
+			return nil
+		}
+
+		keyType := p.inferExpressionType(key)
+		keyTypes = append(keyTypes, keyType)
 
 		if !p.expectPeek(lexer.TokenColon) {
 			return nil
@@ -660,6 +743,12 @@ func (p *Parser) parseMapLiteral() Expression {
 
 		p.nextToken()
 		value := p.parseExpression(LOWEST)
+		if value == nil {
+			return nil
+		}
+
+		valueType := p.inferExpressionType(value)
+		valueTypes = append(valueTypes, valueType)
 
 		m.Pairs[key] = value
 
@@ -673,7 +762,66 @@ func (p *Parser) parseMapLiteral() Expression {
 		return nil
 	}
 
+	// Infer the common key and value types
+	m.KeyType = p.inferCommonType(keyTypes)
+	m.ValueType = p.inferCommonType(valueTypes)
+	m.Type = &MapType{
+		KeyType:   m.KeyType,
+		ValueType: m.ValueType,
+	}
+
 	return m
+}
+
+func (p *Parser) inferExpressionType(expr Expression) Type {
+	switch e := expr.(type) {
+	case *IntegerLiteral:
+		switch e.Value.(type) {
+		case int64:
+			return &BasicType{Name: "int"}
+		case float64:
+			return &BasicType{Name: "float"}
+		}
+	case *StringLiteral:
+		return &BasicType{Name: "string"}
+	case *BooleanLiteral:
+		return &BasicType{Name: "bool"}
+	case *ArrayLiteral:
+		// Infer element type
+		elementTypes := []Type{}
+		for _, elem := range e.Elements {
+			elemType := p.inferExpressionType(elem)
+			elementTypes = append(elementTypes, elemType)
+		}
+		elementType := p.inferCommonType(elementTypes)
+		return &ArrayType{ElementType: elementType}
+	case *MapLiteral:
+		// Already inferred during parsing
+		return e.Type
+	case *Identifier:
+		// Type inference for identifiers may require symbol table lookup
+		return &BasicType{Name: "any"}
+	default:
+		return &BasicType{Name: "any"}
+	}
+	return &BasicType{Name: "any"}
+}
+
+func (p *Parser) inferCommonType(types []Type) Type {
+	if len(types) == 0 {
+		return &BasicType{Name: "any"}
+	}
+
+	commonType := types[0]
+
+	for _, t := range types[1:] {
+		if commonType.TypeName() != t.TypeName() {
+			// Types are different; cannot determine a common specific type
+			return &BasicType{Name: "any"}
+		}
+	}
+
+	return commonType
 }
 
 // Errors returns parser errors.
@@ -780,18 +928,25 @@ func (p *Parser) parseStatement() Statement {
 			return nil
 		}
 	case lexer.TokenIdentifier:
-		if p.peekToken.Type == lexer.TokenAssign {
+		x := 1
+		for p.l.PeekAhead(x).Type != lexer.TokenAssign && p.l.PeekAhead(x).Type != lexer.TokenNewline {
+			x++
+		}
+		if p.l.PeekAhead(x).Type == lexer.TokenAssign || p.peekToken.Type == lexer.TokenComma || p.peekToken.Type == lexer.TokenAssign {
 			return p.parseAssignmentStatement()
 		} else {
 			return p.parseExpressionStatement()
 		}
+	case lexer.TokenDefer:
+		return p.parseDeferStatement()
+	case lexer.TokenGo:
+		return p.parseGoStatement()
 	default:
 		return p.parseExpressionStatement()
 	}
 }
 
-// In parser/parser.go
-
+// parseSelectorExpression parses selector expressions, e.g. identifier.selector
 func (p *Parser) parseSelectorExpression(left Expression) Expression {
 	se := &SelectorExpression{
 		Token: p.curToken, // The '.' token
@@ -814,24 +969,47 @@ func (p *Parser) parseSelectorExpression(left Expression) Expression {
 func (p *Parser) parseAssignmentStatement() *AssignmentStatement {
 	stmt := &AssignmentStatement{Token: p.curToken}
 
-	// Parse the identifier on the left-hand side
-	stmt.Name = &Identifier{Token: p.curToken, Value: p.curToken.Literal}
+	// Parse the identifiers on the left-hand side
+	stmt.Left = p.parseAssignmentLeftHandSide()
 
-	// Consume the '=' token
-	if !p.expectPeek(lexer.TokenAssign) {
-		return nil
-	}
+	p.nextToken() // Move to the start of the right-hand side expression
 
-	// Consume the expression on the right-hand side
-	p.nextToken()
+	// Parse the expression on the right-hand side
 	stmt.Value = p.parseExpression(LOWEST)
 
-	// Optional: handle end of statement (e.g., semicolons)
-	if p.peekToken.Type == lexer.TokenNewline {
+	// Optional: handle end of statement (e.g., newlines, semicolons)
+	if p.peekToken.Type == lexer.TokenNewline || p.peekToken.Type == lexer.TokenSemicolon {
 		p.nextToken()
 	}
 
 	return stmt
+}
+
+func (p *Parser) parseAssignmentLeftHandSide() []Expression {
+	expressions := []Expression{}
+
+	for {
+		expr := p.parseExpression(LOWEST)
+		if expr == nil {
+			return nil
+		}
+		expressions = append(expressions, expr)
+
+		if p.peekToken.Type == lexer.TokenAssign {
+			break
+		}
+
+		if p.peekToken.Type != lexer.TokenComma {
+			break
+		}
+
+		p.nextToken() // Consume ','
+		p.nextToken() // Move to next token
+	}
+
+	p.nextToken()
+
+	return expressions
 }
 
 // parseFunctionDefinition parses a function definition.
@@ -950,7 +1128,6 @@ func (p *Parser) parseReturnStatement() *ReturnStatement {
 
 	rs.ReturnValue = p.parseExpression(LOWEST)
 
-	// Optional: handle end of statement
 	if p.peekToken.Type == lexer.TokenNewline {
 		p.nextToken()
 	}
@@ -975,7 +1152,6 @@ func (p *Parser) parseIfStatement() *IfStatement {
 
 	if p.peekToken.Type == lexer.TokenKeyword && p.peekToken.Literal == "else" {
 		p.nextToken() // Move to 'else'
-		//p.nextToken() // Move to ':'
 
 		if !p.expectPeek(lexer.TokenColon) {
 			return nil
@@ -1043,22 +1219,53 @@ func (p *Parser) parseImportStatement() *ImportStatement {
 	is := &ImportStatement{
 		Token: p.curToken,
 	}
-
+	isSimpleImport := false
 	if !p.expectPeek(lexer.TokenString) {
-		return nil
+		isSimpleImport = true
+		p.nextToken()
 	}
 
 	is.ImportedModule = &StringLiteral{
 		Token: p.curToken,
 		Value: p.curToken.Literal,
 	}
+	is.IsSimpleImport = isSimpleImport
 
-	// Optional: handle end of statement
 	if p.peekToken.Type == lexer.TokenNewline {
 		p.nextToken()
 	}
 
 	return is
+}
+
+// parseImportStatement parses an import statement.
+func (p *Parser) parseDeferStatement() *DeferStatement {
+	ds := &DeferStatement{
+		Token: p.curToken,
+	}
+
+	ds.Expression = p.parseExpression(LOWEST)
+
+	if p.peekToken.Type == lexer.TokenNewline {
+		p.nextToken()
+	}
+
+	return ds
+}
+
+// parseImportStatement parses an import statement.
+func (p *Parser) parseGoStatement() *GoStatement {
+	gs := &GoStatement{
+		Token: p.curToken,
+	}
+
+	gs.Expression = p.parseExpression(LOWEST)
+
+	if p.peekToken.Type == lexer.TokenNewline {
+		p.nextToken()
+	}
+
+	return gs
 }
 
 // parseExpressionStatement parses an expression statement.
@@ -1073,7 +1280,6 @@ func (p *Parser) parseExpressionStatement() *ExpressionStatement {
 
 	es.Expression = p.parseExpression(LOWEST)
 
-	// Optional: handle end of statement
 	if p.peekToken.Type == lexer.TokenNewline {
 		p.nextToken()
 	}
@@ -1112,6 +1318,26 @@ func (p *Parser) parseIdentifier() Expression {
 		Token: p.curToken,
 		Value: p.curToken.Literal,
 	}
+}
+
+// parseStringLiteral parses a string literal.
+func (p *Parser) parseDeferLiteral() Expression {
+	dl := &DeferLiteral{
+		Token: p.curToken,
+		Value: p.curToken.Literal,
+	}
+
+	return dl
+}
+
+// parseStringLiteral parses a string literal.
+func (p *Parser) parseGoLiteral() Expression {
+	gl := &GoLiteral{
+		Token: p.curToken,
+		Value: p.curToken.Literal,
+	}
+
+	return gl
 }
 
 // parseIntegerLiteral parses an integer literal.
@@ -1274,18 +1500,24 @@ func Inspect(node Node, pre NodeVisitor) {
 		}
 
 	case *CallExpression:
-		Inspect(n.Function, pre)
-		for _, arg := range n.Arguments {
-			Inspect(arg, pre)
+		if n != nil {
+			Inspect(n.Function, pre)
+			for _, arg := range n.Arguments {
+				Inspect(arg, pre)
+			}
 		}
 	case *FunctionLiteral:
-		for _, param := range n.Parameters {
-			Inspect(param, pre)
+		if n != nil {
+			for _, param := range n.Parameters {
+				Inspect(param, pre)
+			}
+			Inspect(n.Body, pre)
 		}
-		Inspect(n.Body, pre)
 	case *BlockStatement:
-		for _, stmt := range n.Statements {
-			Inspect(stmt, pre)
+		if n != nil {
+			for _, stmt := range n.Statements {
+				Inspect(stmt, pre)
+			}
 		}
 	case *IfStatement:
 		if n != nil {
@@ -1295,19 +1527,28 @@ func Inspect(node Node, pre NodeVisitor) {
 			Inspect(n.Alternative, pre)
 		}
 	case *WhileStatement:
-		Inspect(n.Condition, pre)
-		Inspect(n.Body, pre)
+		if n != nil {
+			Inspect(n.Condition, pre)
+			Inspect(n.Body, pre)
+		}
 	case *ForStatement:
-		Inspect(n.Iterable, pre)
-		Inspect(n.Body, pre)
+		if n != nil {
+			Inspect(n.Iterable, pre)
+			Inspect(n.Body, pre)
+		}
 	case *InfixExpression:
-		Inspect(n.Left, pre)
-		Inspect(n.Right, pre)
+		if n != nil {
+			Inspect(n.Left, pre)
+			Inspect(n.Right, pre)
+		}
 	case *PrefixExpression:
-		Inspect(n.Right, pre)
+		if n != nil {
+			Inspect(n.Right, pre)
+		}
 	case *SelectorExpression:
-		Inspect(n.Left, pre)
-		Inspect(n.Selector, pre)
-		// Add other node types as needed
+		if n != nil {
+			Inspect(n.Left, pre)
+			Inspect(n.Selector, pre)
+		}
 	}
 }

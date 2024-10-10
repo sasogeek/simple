@@ -55,6 +55,9 @@ const (
 
 	// Assignment Operator
 	TokenAssign TokenType = "="
+
+	TokenDefer TokenType = "defer"
+	TokenGo    TokenType = "go"
 )
 
 // Token represents a lexical token.
@@ -76,6 +79,8 @@ var keywords = map[string]TokenType{
 	"for":    TokenKeyword,
 	"in":     TokenKeyword,
 	"import": TokenKeyword,
+	"defer":  TokenDefer,
+	"go":     TokenGo,
 	"print":  TokenIdentifier,
 	"True":   TokenTrue,
 	"False":  TokenFalse,
@@ -257,7 +262,7 @@ func (l *Lexer) NextToken() Token {
 	case '.':
 		tok = Token{Type: TokenDot, Literal: string(l.ch), Line: l.line, Column: l.column}
 	default:
-		if isLetter(l.ch) {
+		if l.ch == '&' || isLetter(l.ch) {
 			literal := l.readIdentifier()
 			tokenType := LookupIdent(literal)
 			tok = Token{Type: tokenType, Literal: literal, Line: l.line, Column: l.column - len(literal) + 1}
@@ -276,6 +281,41 @@ func (l *Lexer) NextToken() Token {
 	return tok
 }
 
+// PeekAhead looks ahead by n tokens and returns the token at that position without advancing the lexer's state.
+func (l *Lexer) PeekAhead(n int) Token {
+	// Save the lexer's state
+	savedPosition := l.position
+	savedReadPosition := l.readPosition
+	savedCh := l.ch
+	savedLine := l.line
+	savedColumn := l.column
+	savedIndentStack := make([]int, len(l.indentStack))
+	copy(savedIndentStack, l.indentStack)
+	savedPendingTokens := make([]Token, len(l.pendingTokens))
+	copy(savedPendingTokens, l.pendingTokens)
+	savedAtNewLine := l.AtNewLine
+
+	var tok Token
+	for i := 0; i <= n; i++ {
+		tok = l.NextToken()
+		if tok.Type == TokenEOF {
+			break
+		}
+	}
+
+	// Restore the lexer's state
+	l.position = savedPosition
+	l.readPosition = savedReadPosition
+	l.ch = savedCh
+	l.line = savedLine
+	l.column = savedColumn
+	l.indentStack = savedIndentStack
+	l.pendingTokens = savedPendingTokens
+	l.AtNewLine = savedAtNewLine
+
+	return tok
+}
+
 // skipWhitespace skips over spaces and tabs.
 func (l *Lexer) skipWhitespace() {
 	for l.ch == ' ' || l.ch == '\t' || l.ch == '\r' {
@@ -286,7 +326,7 @@ func (l *Lexer) skipWhitespace() {
 // readIdentifier reads an identifier and advances the lexer's positions.
 func (l *Lexer) readIdentifier() string {
 	position := l.readPosition - 1
-	for isLetter(l.ch) || isDigit(l.ch) {
+	for isLetter(l.ch) || isDigit(l.ch) || l.ch == '&' || l.ch == '{' || l.ch == '}' {
 		l.readChar()
 	}
 	return l.input[position : l.readPosition-1]

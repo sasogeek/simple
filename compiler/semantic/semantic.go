@@ -71,7 +71,8 @@ type Analyzer struct {
 	WrapFunctionCalls   map[*parser.CallExpression][]WrapperInfo
 	ExternalFuncs       map[string]*parser.FunctionType // key: "package.Func"
 	ExternalInterfaces  map[string]*ExternalInterface
-	ExpectedReturnTypes map[*parser.CallExpression]parser.Type
+	ExternalConstants   map[string]parser.Type
+	ExpectedReturnTypes map[*parser.CallExpression][]parser.Type
 }
 
 // NewAnalyzer creates a new semantic analyzer.
@@ -86,7 +87,8 @@ func NewAnalyzer() *Analyzer {
 		WrapFunctionCalls:   make(map[*parser.CallExpression][]WrapperInfo),
 		ExternalFuncs:       make(map[string]*parser.FunctionType),
 		ExternalInterfaces:  make(map[string]*ExternalInterface),
-		ExpectedReturnTypes: make(map[*parser.CallExpression]parser.Type),
+		ExternalConstants:   make(map[string]parser.Type),
+		ExpectedReturnTypes: make(map[*parser.CallExpression][]parser.Type),
 	}
 
 	// Initialize built-in functions
@@ -110,6 +112,10 @@ func (a *Analyzer) GetGoTypeFromParserType(pt parser.Type) types.Type {
 			return types.Typ[types.String]
 		case "bool":
 			return types.Typ[types.Bool]
+		case "float":
+			return types.Typ[types.Float64]
+		case "untyped float":
+			return types.Typ[types.UntypedFloat]
 		case "void":
 			return types.Typ[types.UnsafePointer] // Represents 'void' as an unsafe pointer
 		default:
@@ -167,19 +173,19 @@ func (a *Analyzer) createGoSignatureFromFunctionType(ft *parser.FunctionType) *t
 
 	// Create result list
 	var results *types.Tuple
-	switch ft.ReturnType != nil {
-	case true:
-		if ft.ReturnType.TypeName() != "void" {
-			returnType := a.GetGoTypeFromParserType(ft.ReturnType)
+	if len(ft.ReturnTypes) > 0 {
+		var resultVars []*types.Var
+		for i, rt := range ft.ReturnTypes {
+			returnType := a.GetGoTypeFromParserType(rt)
 			if returnType == nil {
-				a.errors = append(a.errors, fmt.Sprintf("Unknown return type: %s", ft.ReturnType.String()))
+				a.errors = append(a.errors, fmt.Sprintf("Unknown return type: %s", rt.String()))
 				return nil
 			}
-			results = types.NewTuple(types.NewVar(token.NoPos, nil, "ret", returnType))
-		} else {
-			results = types.NewTuple()
+			resultName := fmt.Sprintf("ret%d", i+1) // Assign generic names
+			resultVars = append(resultVars, types.NewVar(token.NoPos, nil, resultName, returnType))
 		}
-	case false:
+		results = types.NewTuple(resultVars...)
+	} else {
 		results = types.NewTuple()
 	}
 
@@ -198,7 +204,7 @@ func (a *Analyzer) initBuiltins() {
 	// Define the 'print' built-in function
 	printFunctionType := &parser.FunctionType{
 		ParameterTypes: []parser.Type{&parser.BasicType{Name: "interface{}"}},
-		ReturnType:     &parser.BasicType{Name: "void"},
+		ReturnTypes:    []parser.Type{&parser.BasicType{Name: "void"}},
 	}
 	symbol := &Symbol{
 		Name:   "print",
@@ -298,7 +304,6 @@ func (a *Analyzer) Analyze(node parser.Node, remainingStatements []parser.Statem
 			a.handleImportStatement(n)
 		}
 	default:
-		// Handle other node types as needed
 	}
 }
 
@@ -308,6 +313,12 @@ func (a *Analyzer) handleFunctionLiteral(fl *parser.FunctionLiteral) {
 	// and define the function in the global table
 	paramTypes := make([]parser.Type, len(fl.Parameters))
 	params := make([]parser.Identifier, len(fl.Parameters))
+	prevTable := a.CurrentTable
+	if st, exists := a.SymbolTables.Tables[fl.Name.Value]; exists {
+		a.CurrentTable = st
+	} else {
+		a.CurrentTable = NewSymbolTable(prevTable, fl.Name.Value)
+	}
 	for i := range fl.Parameters {
 		paramTypes[i] = &parser.BasicType{Name: "interface{}"} // Initial type
 		params[i] = *fl.Parameters[i]
@@ -319,10 +330,12 @@ func (a *Analyzer) handleFunctionLiteral(fl *parser.FunctionLiteral) {
 		a.CurrentTable.Define(paramSymbol.Name, paramSymbol)
 	}
 
+	a.CurrentTable = prevTable
+
 	functionType := &parser.FunctionType{
 		Parameters:     params,
 		ParameterTypes: paramTypes,
-		ReturnType:     &parser.BasicType{Name: "void"},
+		ReturnTypes:    []parser.Type{&parser.BasicType{Name: "void"}},
 	}
 
 	// Define the function symbol in the global table
@@ -333,19 +346,19 @@ func (a *Analyzer) handleFunctionLiteral(fl *parser.FunctionLiteral) {
 	}
 
 	// Create a types.Signature for the function
-	//sig := a.createGoSignatureFromFunctionType(functionType)
-	//if sig == nil {
-	//	a.errors = append(a.errors, fmt.Sprintf("Failed to create Go signature for function '%s'", fl.Name.Value))
-	//	return
-	//}
-	//symbol.GoType = sig
 
 	//a.GlobalTable.Define(fl.Name.Value, symbol)
 	a.CurrentTable.Define(fl.Name.Value, symbol)
 
 	// Create a new symbol table for the function scope
-	prevTable := a.CurrentTable
-	funcTable := NewSymbolTable(a.CurrentTable, fl.Name.Value)
+	prevTable = a.CurrentTable
+	if st, exists := a.SymbolTables.Tables[fl.Name.Value]; exists {
+		a.CurrentTable = st
+	} else {
+		a.CurrentTable = NewSymbolTable(prevTable, fl.Name.Value)
+	}
+
+	funcTable := a.CurrentTable
 	a.SymbolTables.Tables[fl.Name.Value] = funcTable
 	a.CurrentTable = funcTable
 
@@ -370,10 +383,10 @@ func (a *Analyzer) handleFunctionLiteral(fl *parser.FunctionLiteral) {
 	// Infer parameter types based on usage
 	a.InferFunctionParameterTypes(fl, funcTable)
 
-	// Infer return type based on return statements
-	functionType.ReturnType = a.InferFunctionReturnType(fl.Body, funcTable)
+	// Infer return types based on return statements
+	functionType.ReturnTypes = a.InferFunctionReturnType(fl.Body, funcTable)
 
-	// Update the function's GoType based on inferred return type
+	// Update the function's GoType based on inferred return types
 	functionTypeInferred := a.createGoSignatureFromFunctionType(functionType)
 	if functionTypeInferred == nil {
 		a.errors = append(a.errors, fmt.Sprintf("Failed to infer Go signature for function '%s'", fl.Name.Value))
@@ -395,8 +408,8 @@ func (a *Analyzer) InferFunctionParameterTypes(fl *parser.FunctionLiteral, funcT
 		switch expr := n.(type) {
 		case *parser.InfixExpression:
 			if expr.Operator == "+" {
-				leftType := a.InferExpressionType(expr.Left, true)
-				rightType := a.InferExpressionType(expr.Right, true)
+				leftType := a.InferExpressionTypes(expr.Left, true)[0]
+				rightType := a.InferExpressionTypes(expr.Right, true)[0]
 
 				// Check if parameters are involved and update their types
 				a.updateParameterType(fl, expr.Left, leftType)
@@ -440,18 +453,18 @@ func (a *Analyzer) updateParameterType(fl *parser.FunctionLiteral, expr parser.E
 }
 
 // InferFunctionReturnType Infers the return type of a function based on its return statements.
-func (a *Analyzer) InferFunctionReturnType(body *parser.BlockStatement, funcTable *SymbolTable) parser.Type {
-	var returnTypes []parser.Type
+func (a *Analyzer) InferFunctionReturnType(body *parser.BlockStatement, funcTable *SymbolTable) []parser.Type {
+	var collectedReturnTypes [][]parser.Type
 	prevTable := a.CurrentTable
 	a.CurrentTable = funcTable
 
 	parser.Inspect(body, func(n parser.Node) bool {
 		if retStmt, ok := n.(*parser.ReturnStatement); ok {
 			if retStmt.ReturnValue != nil {
-				retType := a.InferExpressionType(retStmt.ReturnValue, false)
-				returnTypes = append(returnTypes, retType)
+				retTypes := a.InferExpressionTypes(retStmt.ReturnValue, false)
+				collectedReturnTypes = append(collectedReturnTypes, retTypes)
 			} else {
-				returnTypes = append(returnTypes, &parser.BasicType{Name: "void"})
+				collectedReturnTypes = append(collectedReturnTypes, []parser.Type{&parser.BasicType{Name: "void"}})
 			}
 		}
 		return true
@@ -459,66 +472,79 @@ func (a *Analyzer) InferFunctionReturnType(body *parser.BlockStatement, funcTabl
 
 	a.CurrentTable = prevTable
 
-	if len(returnTypes) == 0 {
-		return &parser.BasicType{Name: "void"}
+	if len(collectedReturnTypes) == 0 {
+		return []parser.Type{&parser.BasicType{Name: "void"}}
 	}
 
-	firstType := returnTypes[0]
-	for _, t := range returnTypes[1:] {
-		if t.String() != firstType.String() {
-			return &parser.BasicType{Name: "interface{}"}
-		}
-	}
-
-	return firstType
+	// For simplicity, assume all return statements return the same types
+	// You may want to implement a unification algorithm here
+	return collectedReturnTypes[0]
 }
 
 // handleAssignmentStatement processes variable assignments.
 func (a *Analyzer) handleAssignmentStatement(as *parser.AssignmentStatement, remainingStatements []parser.Statement) {
+	// Analyze the expression on the right-hand side
 	a.Analyze(as.Value, remainingStatements)
-	// Infer the type of the value
-	varType := a.InferExpressionType(as.Value, true)
+
+	// Infer the type(s) of the value(s)
+	varTypes := a.InferExpressionTypes(as.Value, true) // Returns []parser.Type
 
 	// Determine the scope based on the current symbol table
 	scope := a.CurrentTable.Name
-	//if a.CurrentTable == a.GlobalTable {
-	//	scope = "global"
-	//}
-	// Assign the Inferred type to the variable
 
-	// attempt to resolve it, if it doesn't exist, its the first time we're defining it.
-	// if it does exist and the type is different, rename it.
-	symbol, exists := a.CurrentTable.Resolve(as.Name.Value)
-	if !exists {
-		a.CurrentTable.Define(as.Name.Value, &Symbol{
-			Name:  as.Name.Value,
-			Type:  varType,
-			Scope: scope,
-		})
-	} else {
-		prevName := symbol.Name
-		if symbol.Type.TypeName() != varType.TypeName() {
-			vid := strings.Replace(uuid.NewString(), "-", "", -1)[:5]
-			as.Name.Value = as.Name.Value + vid
-			a.CurrentTable.Define(as.Name.Value, &Symbol{
-				Name:  as.Name.Value,
-				Type:  varType,
-				Scope: scope,
-			})
-			// Update any references to the variable in the remaining statements
-			for _, stmt := range remainingStatements {
-				a.updateVariableReferences(stmt, prevName, as.Name.Value)
-			}
+	// Attempt to resolve each variable or expression on the left-hand side
+	for i, leftExpr := range as.Left {
+		var currentVarType parser.Type
+		if i < len(varTypes) {
+			currentVarType = varTypes[i]
+		} else {
+			// Handle the case where there are fewer return values than variables
+			a.errors = append(a.errors, fmt.Sprintf("Not enough values to assign to variable at position %d", i))
+			continue
 		}
 
+		// Depending on the type of leftExpr, handle differently
+		switch expr := leftExpr.(type) {
+		case *parser.Identifier:
+			// Simple variable assignment
+			name := expr.Value
+			// Attempt to resolve the variable in the current scope
+			symbol, exists := a.CurrentTable.Resolve(name)
+			if !exists {
+				// Define the new variable in the symbol table
+				a.CurrentTable.Define(name, &Symbol{
+					Name:  name,
+					Type:  currentVarType,
+					Scope: scope,
+				})
+			} else {
+				prevName := symbol.Name
+				if symbol.Type.TypeName() != currentVarType.TypeName() {
+					// Variable type has changed; rename the variable
+					vid := strings.Replace(uuid.NewString(), "-", "", -1)[:5]
+					newName := name + vid
+					expr.Value = newName
+					a.CurrentTable.Define(newName, &Symbol{
+						Name:  newName,
+						Type:  currentVarType,
+						Scope: scope,
+					})
+					// Update any references to the variable in the remaining statements
+					for _, stmt := range remainingStatements {
+						a.updateVariableReferences(stmt, prevName, newName)
+					}
+				}
+			}
+		case *parser.IndexExpression, *parser.SelectorExpression:
+			// Assignment to an indexed element or object field, e.g., a[0] = ... or obj.field = ...
+			// Analyze the left expression to ensure validity
+			a.Analyze(expr, remainingStatements)
+			// Optionally, perform additional checks or type inference if needed
+		default:
+			// Other types of expressions are invalid on the left-hand side of an assignment
+			a.errors = append(a.errors, fmt.Sprintf("Invalid left-hand side in assignment at line %d", as.Token.Line))
+		}
 	}
-
-	// Assign the Inferred type to the variable
-	//a.GlobalTable.Define(as.Name.Value, &Symbol{
-	//	Name:  as.Name.Value,
-	//	Type:  varType,
-	//	Scope: scope,
-	//})
 }
 
 // updateVariableReferences updates references to a variable in a given statement to the new name.
@@ -526,9 +552,11 @@ func (a *Analyzer) updateVariableReferences(stmt parser.Statement, oldName, newN
 	switch n := stmt.(type) {
 	case *parser.AssignmentStatement:
 		if n != nil {
-			if n.Name.Value == oldName {
-				n.Name.Value = newName
+			// Update variable references in the left-hand side expressions
+			for _, leftExpr := range n.Left {
+				a.updateVariableReferencesInExpression(leftExpr, oldName, newName)
 			}
+			// Update variable references in the right-hand side expression
 			a.updateVariableReferencesInExpression(n.Value, oldName, newName)
 		}
 	case *parser.ExpressionStatement:
@@ -557,10 +585,8 @@ func (a *Analyzer) updateVariableReferences(stmt parser.Statement, oldName, newN
 			}
 		}
 	case *parser.ReturnStatement:
-		if n != nil {
-			if n.ReturnValue != nil {
-				a.updateVariableReferencesInExpression(n.ReturnValue, oldName, newName)
-			}
+		if n != nil && n.ReturnValue != nil {
+			a.updateVariableReferencesInExpression(n.ReturnValue, oldName, newName)
 		}
 	case *parser.BlockStatement:
 		if n != nil {
@@ -624,13 +650,19 @@ func (a *Analyzer) updateVariableReferencesInExpression(expr parser.Expression, 
 // handleCallExpression processes function calls.
 func (a *Analyzer) handleCallExpression(ce *parser.CallExpression) {
 	// Analyze the function being called
-	funcType := a.InferExpressionType(ce.Function, true)
+	funcTypes := a.InferExpressionTypes(ce.Function, true)
+	if len(funcTypes) == 0 {
+		a.errors = append(a.errors, fmt.Sprintf("Cannot determine function type for '%s'", ce.Function.String()))
+		return
+	}
+	funcType := funcTypes[0]
 	switch funcType.(type) {
 	case *parser.FunctionType:
 		ft := funcType.(*parser.FunctionType)
 		for i, arg := range ce.Arguments {
 			a.Analyze(arg, []parser.Statement{})
-			argType := a.InferExpressionType(arg, true)
+			argTypes := a.InferExpressionTypes(arg, true)
+			argType := argTypes[0]
 			var prevType parser.Type
 			if i < len(ft.ParameterTypes) {
 				paramType := ft.ParameterTypes[i]
@@ -687,6 +719,9 @@ func (a *Analyzer) handleCallExpression(ce *parser.CallExpression) {
 				} else {
 					// Adopt the argument type
 					ft.ParameterTypes[i] = argType
+					if ft.Parameters != nil && i < len(ft.Parameters) {
+						a.CurrentTable.Define(ft.Parameters[i].Value, &Symbol{Name: ft.Parameters[i].Value, Type: argType, GoType: a.GetGoTypeFromParserType(argType)})
+					}
 				}
 			}
 		}
@@ -708,7 +743,7 @@ func (a *Analyzer) doesTypeImplement(paramType parser.Type, argType parser.Type)
 	var paramGoType types.Type
 	switch pt := paramType.(type) {
 	case *parser.InterfaceType:
-		// Interface name may include package alias, e.g., "http.Handler"
+		// Interface name may include package alias
 		parts := strings.Split(pt.Name, ".")
 		if len(parts) == 2 {
 			interfaceName := parts[1]
@@ -794,149 +829,178 @@ func (a *Analyzer) handleIdentifier(id *parser.Identifier, reportErrors bool) {
 	// Resolve the identifier in the current and outer scopes
 	_, found := a.CurrentTable.Resolve(id.Value)
 	if !found {
-		_, found = a.GlobalTable.Resolve(id.Value)
-		if !found {
-			if reportErrors {
-				//a.errors = append(a.errors, fmt.Sprintf("Undefined identifier: %s", id.Value))
-			}
-			return
-		}
+		a.CurrentTable.Define(id.Value, &Symbol{Name: id.Value, Type: &parser.BasicType{Name: "interface{}"}})
 	}
 	// Optionally, use the symbol's type for further analysis
 }
 
+func capitalize(name string) string {
+	if name == "" {
+		return ""
+	}
+	return strings.ToUpper(name[:1]) + name[1:]
+}
+
 // InferExpressionType Infers the type of an expression.
-func (a *Analyzer) InferExpressionType(expr parser.Expression, reportErrors bool) parser.Type {
+func (a *Analyzer) InferExpressionTypes(expr parser.Expression, reportErrors bool) []parser.Type {
 	switch e := expr.(type) {
 	case *parser.IntegerLiteral:
-		switch strings.Contains(e.Token.Literal, ".") {
-		case true:
-			return &parser.BasicType{Name: "float"}
-		case false:
-			return &parser.BasicType{Name: "int"}
+		if strings.Contains(e.Token.Literal, ".") {
+			return []parser.Type{&parser.BasicType{Name: "float"}}
 		}
-		return &parser.BasicType{Name: "int"}
+		return []parser.Type{&parser.BasicType{Name: "int"}}
 	case *parser.StringLiteral:
-		return &parser.BasicType{Name: "string"}
+		return []parser.Type{&parser.BasicType{Name: "string"}}
 	case *parser.BooleanLiteral:
-		return &parser.BasicType{Name: "bool"}
+		return []parser.Type{&parser.BasicType{Name: "bool"}}
 	case *parser.ArrayLiteral:
-		return &parser.BasicType{Name: "slice"}
+		return []parser.Type{&parser.BasicType{Name: "[]any"}}
 	case *parser.MapLiteral:
-		return &parser.BasicType{Name: "map"}
+		return []parser.Type{&parser.BasicType{Name: fmt.Sprintf("map[%s]%s", e.KeyType.(*parser.BasicType).Name, e.ValueType.(*parser.BasicType).Name)}}
 	case *parser.Identifier:
 		symbol, found := a.CurrentTable.Resolve(e.Value)
 		if !found {
-			//symbol, found = a.GlobalTable.Resolve(e.Value)
-			//if !found {
-			//	if reportErrors {
-			//a.errors = append(a.errors, fmt.Sprintf("Undefined identifier: %s", e.Value))
-			//}
-			return &parser.BasicType{Name: "interface{}"}
-			//}
+			// Handle undefined identifier
+			if reportErrors {
+				a.errors = append(a.errors, fmt.Sprintf("Undefined identifier: %s", e.Value))
+			}
+			// if it's a type casting call from inside simple
+			switch e.Value {
+			case "int":
+				return []parser.Type{&parser.BasicType{Name: "int"}}
+			case "string":
+				return []parser.Type{&parser.BasicType{Name: "string"}}
+			case "bool":
+				return []parser.Type{&parser.BasicType{Name: "bool"}}
+			case "float":
+				return []parser.Type{&parser.BasicType{Name: "float"}}
+			case "untyped float":
+				return []parser.Type{&parser.BasicType{Name: "float"}}
+			default:
+				return []parser.Type{&parser.BasicType{Name: "interface{}"}}
+			}
 		}
-		return symbol.Type
+		return []parser.Type{symbol.Type}
 	case *parser.CallExpression:
-		funcType := a.InferExpressionType(e.Function, reportErrors)
-		if ft, ok := funcType.(*parser.FunctionType); ok {
-			// Analyze arguments if needed
+		// Infer the type(s) of the function being called
+		funcTypes := a.InferExpressionTypes(e.Function, reportErrors)
+		if len(funcTypes) == 0 {
+			if reportErrors {
+				a.errors = append(a.errors, fmt.Sprintf("Cannot determine function type for '%s'", e.Function.String()))
+			}
+			return []parser.Type{&parser.BasicType{Name: "interface{}"}}
+		}
+		funcType := funcTypes[0]
+		switch ft := funcType.(type) {
+		case *parser.FunctionType:
+			// Analyze arguments
 			for i, arg := range e.Arguments {
-				argType := a.InferExpressionType(arg, reportErrors)
+				argTypes := a.InferExpressionTypes(arg, reportErrors)
+				if i >= len(ft.ParameterTypes) {
+					if reportErrors {
+						a.errors = append(a.errors, fmt.Sprintf("Too many arguments in call to '%s'", e.Function.String()))
+					}
+					break
+				}
 				expectedType := ft.ParameterTypes[i]
+				argType := argTypes[0]
 				if !a.AreTypesCompatible(argType, expectedType) {
-					// Perform type conversion or report error
+					if reportErrors {
+						a.errors = append(a.errors, fmt.Sprintf("Argument %d in call to '%s' has incompatible type '%s'; expected '%s'", i+1, e.Function.String(), argType.String(), expectedType.String()))
+					}
 				}
 			}
-			return ft.ReturnType
+			return ft.ReturnTypes
+		case *parser.BasicType:
+			return []parser.Type{ft}
 		}
+
 		if reportErrors {
-			a.errors = append(a.errors, fmt.Sprintf("Cannot determine return type of function '%s'", e.Function.String()))
+			a.errors = append(a.errors, fmt.Sprintf("Expression '%s' is not a function", e.Function.String()))
 		}
-		return &parser.BasicType{Name: "interface{}"}
+
+		return []parser.Type{&parser.BasicType{Name: "interface{}"}}
 	case *parser.InfixExpression:
-		leftType := a.InferExpressionType(e.Left, reportErrors)
-		rightType := a.InferExpressionType(e.Right, reportErrors)
+		leftTypes := a.InferExpressionTypes(e.Left, reportErrors)
+		rightTypes := a.InferExpressionTypes(e.Right, reportErrors)
+		leftType := leftTypes[0]
+		rightType := rightTypes[0]
 		switch e.Operator {
 		case "+", "-", "*", "/", "%", "<", "<=", ">", ">=", "==":
-			switch leftType.String() {
-			case "string":
-				return &parser.BasicType{Name: "string"}
-			case "int":
-				switch rightType.String() {
-				case "int":
-					return &parser.BasicType{Name: "int"}
-				case "float":
-					return &parser.BasicType{Name: "float"}
-				}
+			if leftType.String() == "string" || rightType.String() == "string" {
+				return []parser.Type{&parser.BasicType{Name: "string"}}
 			}
-			switch rightType.String() {
-			case "string":
-				return &parser.BasicType{Name: "string"}
-			case "int":
-				switch leftType.String() {
-				case "int":
-					return &parser.BasicType{Name: "int"}
-				case "float":
-					return &parser.BasicType{Name: "float"}
-				}
+			if leftType.String() == "float" || rightType.String() == "float" {
+				return []parser.Type{&parser.BasicType{Name: "float"}}
 			}
+			if leftType.String() == "int" && rightType.String() == "int" {
+				return []parser.Type{&parser.BasicType{Name: "int"}}
+			}
+			return []parser.Type{&parser.BasicType{Name: "interface{}"}}
 		default:
-			return &parser.BasicType{Name: "interface{}"}
+			return []parser.Type{&parser.BasicType{Name: "interface{}"}}
 		}
-		return &parser.BasicType{Name: "interface{}"}
 	case *parser.PrefixExpression:
-		rightType := a.InferExpressionType(e.Right, reportErrors)
+		rightTypes := a.InferExpressionTypes(e.Right, reportErrors)
+		rightType := rightTypes[0]
 		switch e.Operator {
 		case "!":
-			return &parser.BasicType{Name: "bool"}
+			return []parser.Type{&parser.BasicType{Name: "bool"}}
 		case "-":
-			return rightType
-		}
-		return &parser.BasicType{Name: "interface{}"}
-	case *parser.SelectorExpression:
-		if pkgMethod, exists := a.GlobalTable.Symbols[fmt.Sprintf("%s.%s", expr.(*parser.SelectorExpression).Left, expr.(*parser.SelectorExpression).Selector)]; exists {
-			functionType := pkgMethod.Type
-			return functionType
-		}
-		leftType := a.InferExpressionType(e.Left, reportErrors)
-		if leftType == nil {
-			if reportErrors {
-				a.errors = append(a.errors, fmt.Sprintf("Unknown type for expression: %s", e.Left.String()))
-			}
-			return nil
-		}
-
-		// Retrieve the Go type from leftType
-		leftGoType := a.GetGoTypeFromParserType(leftType)
-		if leftGoType == nil {
-			if reportErrors {
-				a.errors = append(a.errors, fmt.Sprintf("Cannot resolve type for %s", leftType.String()))
-			}
-			return nil
-		}
-
-		// Look up the method or field
-		sel := e.Selector.Value
-		obj, _, _ := types.LookupFieldOrMethod(leftGoType, true, a.packageScope(), sel)
-
-		switch obj := obj.(type) {
-		case *types.Func:
-			// Method found
-			sig := obj.Type().(*types.Signature)
-			functionType := a.functionTypeFromSignature(sig)
-			return functionType
-		case *types.Var:
-			// Field found
-			fieldType := &parser.BasicType{Name: obj.Type().String()}
-			return fieldType
+			return []parser.Type{rightType}
 		default:
-			if reportErrors {
-				//a.errors = append(a.errors, fmt.Sprintf("Unsupported selector type for '%s.%s'", leftType.String(), sel))
-			}
-			return nil
+			return []parser.Type{&parser.BasicType{Name: "interface{}"}}
 		}
+	case *parser.SelectorExpression:
+		// Handle package or object member access
+		return a.inferSelectorExpressionType(e, reportErrors)
 	default:
-		return &parser.BasicType{Name: "interface{}"}
+		return []parser.Type{&parser.BasicType{Name: "interface{}"}}
+	}
+}
+
+func (a *Analyzer) inferSelectorExpressionType(e *parser.SelectorExpression, reportErrors bool) []parser.Type {
+	// Handle package or object member access
+	if pkgMethod, exists := a.GlobalTable.Symbols[fmt.Sprintf("%s.%s", e.Left.String(), e.Selector.Value)]; exists {
+		return []parser.Type{pkgMethod.Type}
+	}
+	leftTypes := a.InferExpressionTypes(e.Left, reportErrors)
+	leftType := leftTypes[0]
+	if leftType == nil {
+		if reportErrors {
+			a.errors = append(a.errors, fmt.Sprintf("Unknown type for expression: %s", e.Left.String()))
+		}
+		return []parser.Type{&parser.BasicType{Name: "interface{}"}}
+	}
+
+	// Retrieve the Go type from leftType
+	leftGoType := a.GetGoTypeFromParserType(leftType)
+	if leftGoType == nil {
+		if reportErrors {
+			a.errors = append(a.errors, fmt.Sprintf("Cannot resolve type for %s", leftType.String()))
+		}
+		return []parser.Type{&parser.BasicType{Name: "interface{}"}}
+	}
+
+	// Look up the method or field
+	sel := e.Selector.Value
+	obj, _, _ := types.LookupFieldOrMethod(leftGoType, true, a.packageScope(), sel)
+
+	switch obj := obj.(type) {
+	case *types.Func:
+		// Method found
+		sig := obj.Type().(*types.Signature)
+		functionType := a.functionTypeFromSignature(sig)
+		return []parser.Type{functionType}
+	case *types.Var:
+		// Field found
+		fieldType := &parser.BasicType{Name: obj.Type().String()}
+		return []parser.Type{fieldType}
+	default:
+		if reportErrors {
+			a.errors = append(a.errors, fmt.Sprintf("Unsupported selector type for '%s.%s'", leftType.String(), sel))
+		}
+		return []parser.Type{&parser.BasicType{Name: "interface{}"}}
 	}
 }
 
@@ -964,14 +1028,16 @@ func (a *Analyzer) functionTypeFromSignature(sig *types.Signature) *parser.Funct
 		param := sig.Params().At(i)
 		paramTypes = append(paramTypes, &parser.BasicType{Name: param.Type().String()})
 	}
-	var returnType parser.Type = &parser.BasicType{Name: "void"}
-	if sig.Results().Len() > 0 {
-		result := sig.Results().At(0)
-		returnType = &parser.BasicType{Name: result.Type().String()}
+
+	returnTypes := []parser.Type{}
+	for i := 0; i < sig.Results().Len(); i++ {
+		result := sig.Results().At(i)
+		returnTypes = append(returnTypes, &parser.BasicType{Name: result.Type().String()})
 	}
+
 	return &parser.FunctionType{
 		ParameterTypes: paramTypes,
-		ReturnType:     returnType,
+		ReturnTypes:    returnTypes,
 	}
 }
 
@@ -1005,6 +1071,7 @@ func (a *Analyzer) handleImportStatement(is *parser.ImportStatement) {
 
 	a.extractExternalFunctions(pkg)
 	a.extractExternalInterfaces(pkg)
+	a.extractExternalConstants(pkg)
 
 	// Add exported functions and types to the symbol table
 	scope := pkg.Types.Scope()
@@ -1023,12 +1090,7 @@ func (a *Analyzer) handleImportStatement(is *parser.ImportStatement) {
 				param := sig.Params().At(i)
 				paramTypes = append(paramTypes, &parser.BasicType{Name: param.Type().String()})
 			}
-			//var returnType parser.Type = &parser.BasicType{Name: "void"}
-			//if sig.Results().Len() > 0 {
-			//	// For simplicity, handle only the first return value
-			//	result := sig.Results().At(0)
-			//	returnType = &parser.BasicType{Name: result.Type().String()}
-			//}
+
 			functionType := a.functionTypeFromSignature(sig)
 			symbol := &Symbol{
 				Name:   pkg.Name + "." + name,
@@ -1065,12 +1127,16 @@ func (a *Analyzer) handleImportStatement(is *parser.ImportStatement) {
 			}
 		}
 	}
+
+	for name, typ := range a.ExternalConstants {
+		a.GlobalTable.Define(name, &Symbol{Name: name, Type: typ, Scope: "imported", GoType: a.GetGoTypeFromParserType(typ)})
+	}
 }
 
 func (a *Analyzer) findAdapterForInterface(paramType parser.Type) string {
 	switch pt := paramType.(type) {
 	case *parser.InterfaceType:
-		// Interface name may include package alias, e.g., "http.Handler"
+		// Interface name may include package alias
 		parts := strings.Split(pt.Name, ".")
 		if len(parts) == 2 {
 			pkgAlias, interfaceName := parts[0], parts[1]
@@ -1136,12 +1202,11 @@ func (a *Analyzer) extractExternalInterfaces(pkg *packages.Package) {
 
 			methods = append(methods, &parser.FunctionType{
 				ParameterTypes: paramTypes,
-				ReturnType:     a.combineReturnTypes(returnTypes),
-				//ReturnTypes: returnTypes,
+				ReturnTypes:    returnTypes,
 			})
 		}
 
-		// Fully qualified interface name (e.g., "http.ResponseWriter")
+		// Fully qualified interface name
 		fqIfaceName := fmt.Sprintf("%s.%s", pkg.Name, name)
 
 		// Populate the ExternalInterfaces map
@@ -1202,23 +1267,64 @@ func (a *Analyzer) extractExternalFunctions(pkg *packages.Package) {
 
 		// Extract return types
 		results := sig.Results()
-		var returnType parser.Type
-		if results.Len() > 0 {
-			// For simplicity, handle single return type
-			returnType = a.convertGoType(results.At(0).Type())
+		returnTypes := []parser.Type{}
+		for i := 0; i < results.Len(); i++ {
+			result := results.At(i)
+			returnTypes = append(returnTypes, a.convertGoType(result.Type()))
 		}
 
-		// Fully qualified function name (e.g., "http.ListenAndServe")
+		// Fully qualified function name
 		fqFuncName := fmt.Sprintf("%s.%s", pkg.Name, funcObj.Name())
 
 		// Populate the ExternalFuncs map
 		a.ExternalFuncs[fqFuncName] = &parser.FunctionType{
 			ParameterTypes: paramTypes,
-			ReturnType:     returnType,
+			ReturnTypes:    returnTypes,
 		}
 	}
 }
 
+func (a *Analyzer) extractExternalConstants(pkg *packages.Package) {
+	scope := pkg.Types.Scope()
+	for _, name := range scope.Names() {
+		obj := scope.Lookup(name)
+		if obj == nil {
+			continue
+		}
+
+		// We are interested in constants and variables only
+		switch constObj := obj.(type) {
+		case *types.Const:
+			// Ensure the constant is exported
+			if !constObj.Exported() {
+				continue
+			}
+
+			// Get the type of the constant
+			constType := a.convertGoType(constObj.Type())
+
+			// Fully qualified constant name (e.g., "math.Pi")
+			fqConstName := fmt.Sprintf("%s.%s", pkg.Name, constObj.Name())
+
+			// Populate the ExternalConstants map
+			a.ExternalConstants[fqConstName] = constType
+
+		case *types.Var:
+			// Handle exported variables (e.g., time.Second)
+			if !constObj.Exported() {
+				continue
+			}
+
+			varType := a.convertGoType(constObj.Type())
+			fqVarName := fmt.Sprintf("%s.%s", pkg.Name, constObj.Name())
+			a.ExternalConstants[fqVarName] = varType
+
+			// You can also handle other object types if needed
+		}
+	}
+}
+
+// convertGoType converts Go's types.Type to Simple's parser.Type.
 // convertGoType converts Go's types.Type to Simple's parser.Type.
 func (a *Analyzer) convertGoType(goType types.Type) parser.Type {
 	switch t := goType.(type) {
@@ -1246,16 +1352,17 @@ func (a *Analyzer) convertGoType(goType types.Type) parser.Type {
 			paramTypes = append(paramTypes, a.convertGoType(param.Type()))
 		}
 
-		var returnType parser.Type
+		// Collect all return types
+		returnTypes := []parser.Type{}
 		results := t.Results()
-		if results.Len() > 0 {
-			// For simplicity, handle single return type
-			returnType = a.convertGoType(results.At(0).Type())
+		for i := 0; i < results.Len(); i++ {
+			result := results.At(i)
+			returnTypes = append(returnTypes, a.convertGoType(result.Type()))
 		}
 
 		return &parser.FunctionType{
 			ParameterTypes: paramTypes,
-			ReturnType:     returnType,
+			ReturnTypes:    returnTypes,
 		}
 	case *types.Slice:
 		elemType := a.convertGoType(t.Elem())

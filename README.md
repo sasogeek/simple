@@ -17,10 +17,6 @@ Join the community on Slack for the latest updates;
   - [Control Flow](#control-flow)
   - [Functions](#functions)
   - [Data Types](#data-types)
-  - [Built-in Methods](#built-in-methods)
-    - [String Methods](#string-methods)
-    - [Array Methods](#array-methods)
-    - [Dictionary Methods](#dictionary-methods)
   - [Printing](#printing)
 - [Contributing](#contributing)
 - [License](#license)
@@ -169,28 +165,6 @@ for num in arr:
 - **Float**: A floating-point number, e.g., `3.14`.
 - **Array**: A collection of values, e.g., `[1, 2, 3]`.
 - **Dictionary**: A key-value pair collection, e.g., `{"key": "value"}`.
-
-### Built-in Methods
-
-#### String Methods
-
-- `upper()`: Converts the string to uppercase.
-- `lower()`: Converts the string to lowercase.
-- `replace(old, new)`: Replaces occurrences of `old` with `new`.
-- `split(separator)`: Splits the string into an array based on the separator.
-- `find(substring)`: Returns the index of the first occurrence of `substring`, or `-1` if not found.
-- `strip()`: Removes leading and trailing whitespace.
-- `startswith(prefix)`: Returns `True` if the string starts with `prefix`.
-- `endswith(suffix)`: Returns `True` if the string ends with `suffix`.
-
-#### Array Methods
-
-- `append(item)`: Adds `item` to the end of the array.
-- `extend(another_array)`: Extends the array by appending all elements from `another_array`.
-
-#### Dictionary Methods
-
-- `update(another_dict)`: Updates the dictionary with key-value pairs from `another_dict`.
 
 ### Printing
 
