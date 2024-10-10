@@ -360,7 +360,7 @@ processJSON()
 ```
 
 
-#### Example 8: `goroutines` Using goroutines
+#### Example 8: `goroutines!` Using goroutines
 
 ```python
 import "fmt"
@@ -373,6 +373,7 @@ def startGoroutines():
     wg = sync.WaitGroup{}
     numGoroutines = 3
     wg.Add(numGoroutines)
+    
     def work(id):
         defer wg.Done()
         executeTask(id)
@@ -381,7 +382,7 @@ def startGoroutines():
         go work(i)
 
     wg.Wait()
-    fmt.Println("All goroutines have finished")
+    print("All goroutines have finished")
 
 startGoroutines()
 
