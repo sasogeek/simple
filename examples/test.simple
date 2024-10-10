@@ -1,24 +1,21 @@
-import "encoding/json"
+import "fmt"
+import "sync"
 
-def serializeData(data):
-    jsonData, err = json.Marshal(data)
-    if err != nil:
-        print("Error marshaling JSON:", err)
-    return jsonData
+def executeTask(id):
+    fmt.Println("Goroutine", id, "is running")
 
-def deserializeData(jsonStr):
-    decodedData = {"placeholder": "", "dict": 0}
-    json.Unmarshal(jsonStr, &decodedData)
-    return decodedData
+def startGoroutines():
+    wg = sync.WaitGroup{}
+    numGoroutines = 3
+    wg.Add(numGoroutines)
+    def work(id):
+        defer wg.Done()
+        executeTask(id)
 
-def processJSON():
-    data = {"name": "Simple Language","version": "1.0","features": ["lexer", "parser", "semantic analyzer", "transformer", "code generator"]}
-    jsonStr = serializeData(data)
-    print("Serialized JSON:")
-    print(jsonStr)
+    for i in numGoroutines:
+        go work(i)
 
-    decoded = deserializeData(jsonStr)
-    print("Deserialized Data:")
-    print(decoded)
+    wg.Wait()
+    fmt.Println("All goroutines have finished")
 
-processJSON()
+startGoroutines()
