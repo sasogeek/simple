@@ -15,16 +15,17 @@ Join the community on Slack for the latest updates:
 - [Syntax Guide](#syntax-guide)
   - [Variables](#variables)
   - [Control Flow](#control-flow)
-  - [Functions](#functions)
-    - [Example 1: Using `print` to Print Messages](#example-1-using-print-to-print-messages)
-    - [Example 2: Using `math` for Mathematical Operations](#example-2-using-math-for-mathematical-operations)
-    - [Example 3: Using `strings` for String Manipulation](#example-3-using-strings-for-string-manipulation)
-    - [Example 4: Using `time` for Time-Related Operations](#example-4-using-time-for-time-related-operations)
-    - [Example 5: Using `os` for Operating System Interactions](#example-5-using-os-for-operating-system-interactions)
-    - [Example 6: Using `net/http` to Make HTTP Requests](#example-6-using-nethttp-to-make-http-requests)
-    - [Example 7: Using `encoding/json` for JSON Serialization and Deserialization](#example-7-using-encodingjson-for-json-serialization-and-deserialization)
   - [Data Types](#data-types)
   - [Printing](#printing)
+  - [Functions](#functions)
+    - [Example 1: `print` to Print Messages](#example-1-using-print-to-print-messages)
+    - [Example 2: `math` for Math Operations](#example-2-using-math-for-mathematical-operations)
+    - [Example 3: `strings` for String Manipulation](#example-3-using-strings-for-string-manipulation)
+    - [Example 4: `time` for Time-Related Operations](#example-4-using-time-for-time-related-operations)
+    - [Example 5: `os` for Operating System Interactions](#example-5-using-os-for-operating-system-interactions)
+    - [Example 6: `net/http` to Make HTTP Requests](#example-6-using-nethttp-to-make-http-requests)
+    - [Example 7: `encoding/json` for JSON Serialization and Deserialization](#example-7-using-encodingjson-for-json-serialization-and-deserialization)
+    - [Example 8: `go routines` using goroutines](#example-8-goroutines-using-goroutines)
 - [Contributing](#contributing)
 - [License](#license)
 
@@ -169,13 +170,37 @@ for index in arr:
     print(arr[index])
 ```
 
+### Data Types
+
+- **String**: A sequence of characters, e.g., `"Hello"`.
+- **Integer**: A whole number, e.g., `5`.
+- **Float**: A floating-point number, e.g., `3.14`.
+- **Array**: A collection of values, e.g., `[1, 2, 3]`.
+- **Dictionary**: A key-value pair collection, e.g., `{"key": "value"}`.
+
+### Printing
+
+The `print()` function works similarly to Python, outputting to the console:
+
+```python
+print("Hello, World!")
+```
+
+You can print variables or expressions as well:
+
+```python
+name = "Simple"
+print("Hello, " + name)
+```
+
+
 ### Functions
 
 Here are **7 examples** demonstrating the usage of different Go packages in Simple, written with Python-like syntax.
 
 #### Example 1: Using `print` to Print Messages
 
-```simple
+```python
 import "fmt"
 
 def greet():
@@ -186,7 +211,7 @@ greet()
 
 #### Example 2: Using `math` for Mathematical Operations
 
-```simple
+```python
 import "math"
 
 def calculateSqrt(number):
@@ -202,7 +227,7 @@ displayResult()
 
 #### Example 3: Using `strings` for String Manipulation
 
-```simple
+```python
 import "strings"
 
 def stringManipulation(original):
@@ -221,7 +246,7 @@ mainLogic()
 
 #### Example 4: Using `time` for Time-Related Operations
 
-```simple
+```python
 import "time"
 
 def countdownTimer(seconds):
@@ -240,7 +265,7 @@ startCountdown()
 
 #### Example 5: Using `os` for Operating System Interactions
 
-```simple
+```python
 import "os"
 
 def readEnv():
@@ -265,7 +290,7 @@ mainLogic()
 
 #### Example 6: Using `net/http` to Make HTTP Requests
 
-```simple
+```python
 import "net/http"
 import "io/ioutil"
 
@@ -298,7 +323,7 @@ mainLogic()
 
 #### Example 7: Using `encoding/json` for JSON Serialization and Deserialization
 
-```simple
+```python
 import "encoding/json"
 
 def serializeData(data):
@@ -326,28 +351,37 @@ processJSON()
 
 ```
 
-### Data Types
 
-- **String**: A sequence of characters, e.g., `"Hello"`.
-- **Integer**: A whole number, e.g., `5`.
-- **Float**: A floating-point number, e.g., `3.14`.
-- **Array**: A collection of values, e.g., `[1, 2, 3]`.
-- **Dictionary**: A key-value pair collection, e.g., `{"key": "value"}`.
-
-### Printing
-
-The `print()` function works similarly to Python, outputting to the console:
+#### Example 8: `goroutines` Using goroutines
 
 ```python
-print("Hello, World!")
+import "encoding/json"
+
+def serializeData(data):
+    jsonData, err = json.Marshal(data)
+    if err != nil:
+        print("Error marshaling JSON:", err)
+    return jsonData
+
+def deserializeData(jsonStr):
+    decodedData = {"placeholder": "", "dict": 0}
+    json.Unmarshal(jsonStr, &decodedData)
+    return decodedData
+
+def processJSON():
+    data = {"name": "Simple Language","version": "1.0","features": ["lexer", "parser", "semantic analyzer", "transformer", "code generator"]}
+    jsonStr = serializeData(data)
+    print("Serialized JSON:")
+    print(jsonStr)
+
+    decoded = deserializeData(jsonStr)
+    print("Deserialized Data:")
+    print(decoded)
+
+processJSON()
+
 ```
 
-You can print variables or expressions as well:
-
-```python
-name = "Simple"
-print("Hello, " + name)
-```
 
 ## Contributing
 
