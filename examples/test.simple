@@ -1,42 +1,24 @@
-import "time"
+import "encoding/json"
 
-start = time.Now()
+def serializeData(data):
+    jsonData, err = json.Marshal(data)
+    if err != nil:
+        print("Error marshaling JSON:", err)
+    return jsonData
 
-my_integer = 1
-my_float = 1.5
-my_string = "Hello Simple!"
-my_array = [1, 2, 3]
-my_dict = {"name": "Simple", "age": 1}
+def deserializeData(jsonStr):
+    decodedData = {"placeholder": "", "dict": 0}
+    json.Unmarshal(jsonStr, &decodedData)
+    return decodedData
 
-print(my_integer)
-print(my_float)
-print(my_string)
-print(my_array)
-print(my_dict)
-print()
+def processJSON():
+    data = {"name": "Simple Language","version": "1.0","features": ["lexer", "parser", "semantic analyzer", "transformer", "code generator"]}
+    jsonStr = serializeData(data)
+    print("Serialized JSON:")
+    print(jsonStr)
 
+    decoded = deserializeData(jsonStr)
+    print("Deserialized Data:")
+    print(decoded)
 
-if my_integer > my_float:
-    print("Integer is bigger")
-else:
-    print("Float is bigger")
-print()
-
-
-print("Counting from 1 to 10:")
-for i in 10:
-    print(i+1)
-print()
-
-x = 10
-print("Counting down from 10")
-while x > 0:
-    print(x)
-	x = x - 1
-
-
-
-######################
-elapsed = time.Since(start).Seconds()
-fmt.Printf("Elapsed time: %.8f seconds\n", elapsed)
-
+processJSON()

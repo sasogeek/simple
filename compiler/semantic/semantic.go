@@ -380,6 +380,8 @@ func (a *Analyzer) handleFunctionLiteral(fl *parser.FunctionLiteral) {
 	// Analyze the function body
 	a.Analyze(fl.Body, []parser.Statement{fl.Body})
 
+	a.CurrentTable = prevTable
+
 	// Infer parameter types based on usage
 	a.InferFunctionParameterTypes(fl, funcTable)
 
@@ -395,7 +397,7 @@ func (a *Analyzer) handleFunctionLiteral(fl *parser.FunctionLiteral) {
 	symbol.GoType = functionTypeInferred
 
 	// Restore the previous symbol table
-	a.CurrentTable = prevTable
+	//a.CurrentTable = prevTable
 }
 
 // InferFunctionParameterTypes Infers and updates parameter types based on their usage.
@@ -693,6 +695,7 @@ func (a *Analyzer) handleCallExpression(ce *parser.CallExpression) {
 								case *parser.FunctionType:
 									if symbol, ok := a.CurrentTable.Resolve(arg.String()); ok {
 										//symbol.Type = argType
+										funcTable := a.SymbolTables.Tables[arg.String()]
 										for x, _ := range symbol.Type.(*parser.FunctionType).ParameterTypes {
 											symbol.Type.(*parser.FunctionType).ParameterTypes[x] = a.ExternalFuncs[fmt.Sprintf("%s.%s", ce.Function.(*parser.SelectorExpression).Left, ce.Function.(*parser.SelectorExpression).Selector)].ParameterTypes[i].(*parser.FunctionType).ParameterTypes[x]
 											a.CurrentTable.Define(arg.String(), symbol)
@@ -703,10 +706,14 @@ func (a *Analyzer) handleCallExpression(ce *parser.CallExpression) {
 												Name: param.Value,
 												Type: a.ExternalFuncs[fmt.Sprintf("%s.%s", ce.Function.(*parser.SelectorExpression).Left, ce.Function.(*parser.SelectorExpression).Selector)].ParameterTypes[i].(*parser.FunctionType).ParameterTypes[x],
 											}
-											a.CurrentTable.Define(param.Value, paramSymbol)
+											funcTable.Define(param.Value, paramSymbol)
 											//a.CurrentTable.Define(param.Value, paramSymbol)
 											//}
 										}
+									}
+								case *parser.BasicType:
+									if symbol, ok := a.CurrentTable.Resolve(arg.String()); ok {
+										symbol.Type = paramType
 									}
 
 								}
@@ -909,6 +916,20 @@ func (a *Analyzer) InferExpressionTypes(expr parser.Expression, reportErrors boo
 						a.errors = append(a.errors, fmt.Sprintf("Argument %d in call to '%s' has incompatible type '%s'; expected '%s'", i+1, e.Function.String(), argType.String(), expectedType.String()))
 					}
 				}
+				prevTable := a.CurrentTable
+				switch e.Function.(type) {
+				case *parser.Identifier:
+					a.CurrentTable = a.SymbolTables.Tables[e.Function.(*parser.Identifier).Value]
+					goType := a.GetGoTypeFromParserType(expectedType)
+					symbol, found := a.CurrentTable.Resolve(funcType.(*parser.FunctionType).Parameters[i].Value)
+					if found {
+						a.CurrentTable.Define(symbol.Name, &Symbol{Name: symbol.Name, Type: expectedType, GoType: goType})
+					} else {
+						argName := funcType.(*parser.FunctionType).Parameters[i].Value
+						a.CurrentTable.Define(argName, &Symbol{Name: argName, Type: expectedType, GoType: goType})
+					}
+				}
+				a.CurrentTable = prevTable
 			}
 			return ft.ReturnTypes
 		case *parser.BasicType:
@@ -920,6 +941,38 @@ func (a *Analyzer) InferExpressionTypes(expr parser.Expression, reportErrors boo
 		}
 
 		return []parser.Type{&parser.BasicType{Name: "interface{}"}}
+	//case *parser.CallExpression:
+	//	funcType := a.InferExpressionType(e.Function, reportErrors)
+	//	if ft, ok := funcType.(*parser.FunctionType); ok {
+	//		// Analyze arguments if needed
+	//		for i, arg := range e.Arguments {
+	//			argType := a.InferExpressionType(arg, reportErrors)
+	//			expectedType := ft.ParameterTypes[i]
+	//			if !a.AreTypesCompatible(argType, expectedType) {
+	//				// Perform type conversion or report error
+	//			}
+	//			prevTable := a.CurrentTable
+	//			switch e.Function.(type) {
+	//			case *parser.Identifier:
+	//				a.CurrentTable = a.SymbolTables.Tables[e.Function.(*parser.Identifier).Value]
+	//				goType := a.GetGoTypeFromParserType(expectedType)
+	//				symbol, found := a.CurrentTable.Resolve(funcType.(*parser.FunctionType).Parameters[i].Value)
+	//				if found {
+	//					a.CurrentTable.Define(symbol.Name, &Symbol{Name: symbol.Name, Type: expectedType, GoType: goType})
+	//				} else {
+	//					argName := funcType.(*parser.FunctionType).Parameters[i].Value
+	//					a.CurrentTable.Define(argName, &Symbol{Name: argName, Type: expectedType, GoType: goType})
+	//				}
+	//			}
+	//			a.CurrentTable = prevTable
+	//		}
+	//		return ft.ReturnType
+	//	}
+	//	if reportErrors {
+	//		a.errors = append(a.errors, fmt.Sprintf("Cannot determine return type of function '%s'", e.Function.String()))
+	//	}
+	//	return &parser.BasicType{Name: "interface{}"}
+
 	case *parser.InfixExpression:
 		leftTypes := a.InferExpressionTypes(e.Left, reportErrors)
 		rightTypes := a.InferExpressionTypes(e.Right, reportErrors)

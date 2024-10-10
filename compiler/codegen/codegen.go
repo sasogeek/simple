@@ -462,6 +462,16 @@ func (cg *CodeGenerator) generateStatement(file *os.File, stmt parser.Statement,
 func (cg *CodeGenerator) generateExpression(file *os.File, expr parser.Expression) {
 	switch e := expr.(type) {
 	case *parser.Identifier:
+		//if symbol, found := cg.analyzer.CurrentTable.Resolve(e.Value); found {
+		//	switch symbol.Type.(type) {
+		//	case *parser.BasicType:
+		//		fmt.Fprintf(file, "%s(%s)", symbol.Type.String(), e.Value)
+		//	default:
+		//		fmt.Fprint(file, e.Value)
+		//	}
+		//} else {
+		//	fmt.Fprintf(file, "%s", e.Value)
+		//}
 		fmt.Fprint(file, e.Value)
 	case *parser.IntegerLiteral:
 		fmt.Fprint(file, e.Value)
@@ -822,35 +832,35 @@ func (cg *CodeGenerator) generateCallExpression(file *os.File, ce *parser.CallEx
 
 	// Handle generic function calls
 	// Infer the function type
-	funcType := cg.analyzer.InferExpressionTypes(ce.Function, true)[0]
-	var paramTypes []parser.Type
-	if ft, ok := funcType.(*parser.FunctionType); ok {
-		paramTypes = ft.ParameterTypes
-	}
+	//funcType := cg.analyzer.InferExpressionTypes(ce.Function, true)[0]
+	//var paramTypes []parser.Type
+	//if ft, ok := funcType.(*parser.FunctionType); ok {
+	//	paramTypes = ft.ParameterTypes
+	//}
 
 	cg.generateExpression(file, ce.Function)
 	fmt.Fprint(file, "(")
 	for i, arg := range ce.Arguments {
-		argType := cg.analyzer.InferExpressionTypes(arg, true)[0]
-		var expectedType parser.Type
-		if i < len(paramTypes) {
-			expectedType = paramTypes[i]
-		} else {
-			expectedType = &parser.BasicType{Name: "interface{}"}
-		}
+		//argType := cg.analyzer.InferExpressionTypes(arg, true)[0]
+		//var expectedType parser.Type
+		//if i < len(paramTypes) {
+		//	expectedType = paramTypes[i]
+		//} else {
+		//	expectedType = &parser.BasicType{Name: "interface{}"}
+		//}
 
-		needsConversion, conversionFunc := cg.needsTypeConversion(argType, expectedType)
-		if needsConversion {
-			fmt.Fprint(file, conversionFunc+"(")
-			cg.generateExpression(file, arg)
-			fmt.Fprint(file, ")")
+		//needsConversion, conversionFunc := cg.needsTypeConversion(argType, expectedType)
+		//if needsConversion {
+		//	fmt.Fprint(file, conversionFunc+"(")
+		//	cg.generateExpression(file, arg)
+		//	fmt.Fprint(file, ")")
+		//} else {
+		if arg == nil {
+			fmt.Fprint(file, "nil")
 		} else {
-			if arg == nil {
-				fmt.Fprint(file, "nil")
-			} else {
-				cg.generateExpression(file, arg)
-			}
+			cg.generateExpression(file, arg)
 		}
+		//}
 
 		if i < len(ce.Arguments)-1 {
 			fmt.Fprint(file, ", ")

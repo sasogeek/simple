@@ -4,7 +4,7 @@ Simple is an experimental programming language that compiles `.simple` files int
 
 This README will guide you through installing, using, and extending the Simple language.
 
-Join the community on Slack for the latest updates;
+Join the community on Slack for the latest updates:
 [Join Slack](https://join.slack.com/t/simplecommunity/shared_invite/zt-2s32ctsx1-~kGgQvtwIlV39rCsR~ruug)
 
 ## Table of Contents
@@ -16,6 +16,13 @@ Join the community on Slack for the latest updates;
   - [Variables](#variables)
   - [Control Flow](#control-flow)
   - [Functions](#functions)
+    - [Example 1: Using `print` to Print Messages](#example-1-using-print-to-print-messages)
+    - [Example 2: Using `math` for Mathematical Operations](#example-2-using-math-for-mathematical-operations)
+    - [Example 3: Using `strings` for String Manipulation](#example-3-using-strings-for-string-manipulation)
+    - [Example 4: Using `time` for Time-Related Operations](#example-4-using-time-for-time-related-operations)
+    - [Example 5: Using `os` for Operating System Interactions](#example-5-using-os-for-operating-system-interactions)
+    - [Example 6: Using `net/http` to Make HTTP Requests](#example-6-using-nethttp-to-make-http-requests)
+    - [Example 7: Using `encoding/json` for JSON Serialization and Deserialization](#example-7-using-encodingjson-for-json-serialization-and-deserialization)
   - [Data Types](#data-types)
   - [Printing](#printing)
 - [Contributing](#contributing)
@@ -25,7 +32,6 @@ Join the community on Slack for the latest updates;
 
 - **Python-like syntax**: Write familiar code, but get the performance benefits of Go.
 - **Simple syntax**: Easier learning curve for beginners, with basic types like strings, arrays, and dictionaries.
-- **Method support**: In-place and non-in-place methods for strings, arrays, and dictionaries.
 - **Open Source**: Built by the community, for the community.
 
 ## Installation
@@ -37,7 +43,8 @@ To get started with Simple, you need the following installed:
 1. **Go** (version 1.23+): Install from [here](https://golang.org/dl/).
 2. **Git**: Used to clone the repository.
 
-(The installation script will installs go for you, if you're on macos)
+(The installation script will install Go for you if you're on macOS)
+
 ### Install Simple
 
 1. Clone the Simple repository:
@@ -52,7 +59,7 @@ To get started with Simple, you need the following installed:
    cd simple
    ```
 
-3. Run the installation script: (only tested on macos)
+3. Run the installation script: (only tested on macOS)
 
    ```bash
    cd compiler
@@ -90,7 +97,7 @@ You can create a Simple program in a file with a `.simple` extension. Here's an 
 
 ### hello_world.simple
 
-```python
+```simple
 print("Hello, World!")
 ```
 
@@ -99,13 +106,17 @@ Compile the Simple program into a Go binary and run it:
 ```bash
 simple hello_world.simple
 ```
-This will generate AND run the binary. To run the generated binary without recompiling it,
-run it like so;
+
+This will generate AND run the binary in a directory named after the file. To run the generated binary without recompiling it, run it like so:
 
 ```bash
+./hello_world/hello_world
+```
+or 
+```bash
+cd hello_world
 ./hello_world
 ```
-
 ## Syntax Guide
 
 ### Variables
@@ -154,8 +165,165 @@ while counter < 5:
 ```python
 arr = [1, 2, 3]
 
-for num in arr:
-    print(num)
+for index in arr:
+    print(arr[index])
+```
+
+### Functions
+
+Here are **7 examples** demonstrating the usage of different Go packages in Simple, written with Python-like syntax.
+
+#### Example 1: Using `print` to Print Messages
+
+```simple
+import "fmt"
+
+def greet():
+    print("Hello, Simple World!")
+
+greet()
+```
+
+#### Example 2: Using `math` for Mathematical Operations
+
+```simple
+import "math"
+
+def calculateSqrt(number):
+    return math.Sqrt(float64(number))
+
+def displayResult():
+    num = 25
+    result = calculateSqrt(num)
+    print("The square root of", num, "is", result)
+
+displayResult()
+```
+
+#### Example 3: Using `strings` for String Manipulation
+
+```simple
+import "strings"
+
+def stringManipulation(original):
+    upper = strings.ToUpper(original)
+    contains = strings.Contains(original, "programming")
+    print("Original:", original)
+    print("Uppercase:", upper)
+    print("Contains 'programming':", contains)
+
+def mainLogic():
+    text = "simple programming language"
+    stringManipulation(text)
+
+mainLogic()
+```
+
+#### Example 4: Using `time` for Time-Related Operations
+
+```simple
+import "time"
+
+def countdownTimer(seconds):
+    while seconds > 0:
+        print(seconds)
+        time.Sleep(1 * time.Second)
+        seconds = seconds - 1
+    print("Liftoff!")
+
+def startCountdown():
+    print("Starting countdown...")
+    countdownTimer(3)
+
+startCountdown()
+```
+
+#### Example 5: Using `os` for Operating System Interactions
+
+```simple
+import "os"
+
+def readEnv():
+    homeDir = os.Getenv("HOME")
+    print("Home Directory:", homeDir)
+
+def createFile(filename, content):
+    file, err = os.Create(filename)
+    if err != nil:
+        print("Error creating file:", err)
+        return
+    file.WriteString(content)
+    file.Close()
+    print("File", filename, "created successfully.")
+
+def mainLogic():
+    readEnv()
+    createFile("example.txt", "Hello from Simple!\n")
+
+mainLogic()
+```
+
+#### Example 6: Using `net/http` to Make HTTP Requests
+
+```simple
+import "net/http"
+import "io/ioutil"
+
+def fetchGitHubAPI(url):
+    response, err = http.Get(url)
+    if err != nil:
+        print("Error making GET request:", err)
+        return nil
+    defer response.Body.Close()
+    body, err = ioutil.ReadAll(response.Body)
+    if err != nil:
+        print("Error reading response body:", err)
+        return nil
+    return body
+
+def displayResponse(body):
+    if body != nil:
+        print("Response from GitHub API:")
+        print(string(body))
+    else:
+        print("No response to display.")
+
+def mainLogic():
+    url = "https://api.github.com"
+    responseBody = fetchGitHubAPI(url)
+    displayResponse(responseBody)
+
+mainLogic()
+```
+
+#### Example 7: Using `encoding/json` for JSON Serialization and Deserialization
+
+```simple
+import "encoding/json"
+
+def serializeData(data):
+    jsonData, err = json.Marshal(data)
+    if err != nil:
+        print("Error marshaling JSON:", err)
+    return jsonData
+
+def deserializeData(jsonStr):
+    decodedData = {"placeholder": "", "dict": 0}
+    json.Unmarshal(jsonStr, &decodedData)
+    return decodedData
+
+def processJSON():
+    data = {"name": "Simple Language","version": "1.0","features": ["lexer", "parser", "semantic analyzer", "transformer", "code generator"]}
+    jsonStr = serializeData(data)
+    print("Serialized JSON:")
+    print(jsonStr)
+
+    decoded = deserializeData(jsonStr)
+    print("Deserialized Data:")
+    print(decoded)
+
+processJSON()
+
 ```
 
 ### Data Types

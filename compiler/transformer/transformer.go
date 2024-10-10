@@ -187,7 +187,6 @@ func (t *Transformer) handleCallExpression(ce *parser.CallExpression, rNode pars
 		//funcName := selExpr.Selector.String()
 		//fqFuncName := pkgName + "." + funcName
 
-		// Retrieve the function type from the analyzer's ExternalFuncs
 		if extFuncType, exists := t.analyzer.ExternalFuncs[fqFuncName]; exists {
 			// Perform type conversion for arguments
 			for i, arg := range ce.Arguments {
