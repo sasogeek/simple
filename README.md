@@ -226,7 +226,7 @@ def calculateSqrt(number):
     return math.Sqrt(float64(number))
 
 def displayResult():
-    num = 25
+    num = 25.0
     result = calculateSqrt(num)
     print("The square root of", num, "is", result)
 
