@@ -94,8 +94,8 @@ func main() {
 		return
 	}
 
-	filename := "examples/test.simple"
-	//filename := os.Args[1]
+	//filename := "examples/test.simple"
+	filename := os.Args[1]
 	content, err := os.ReadFile(filename)
 	if err != nil {
 		fmt.Printf("Error reading file: %v\n", err)
