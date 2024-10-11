@@ -1,6 +1,11 @@
-import "fmt"
+import "math"
 
-def greet():
-    print("Hello, Simple World!")
+def calculateSqrt(number):
+    return math.Sqrt(number)
 
-greet()
+def displayResult():
+    num = 25.0
+    result = calculateSqrt(num)
+    print("The square root of", num, "is", result)
+
+displayResult()

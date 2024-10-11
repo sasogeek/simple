@@ -224,7 +224,7 @@ greet()
 import "math"
 
 def calculateSqrt(number):
-    return math.Sqrt(float64(number))
+    return math.Sqrt(number)
 
 def displayResult():
     num = 25.0

@@ -853,7 +853,7 @@ func (a *Analyzer) InferExpressionTypes(expr parser.Expression, reportErrors boo
 	switch e := expr.(type) {
 	case *parser.IntegerLiteral:
 		if strings.Contains(e.Token.Literal, ".") {
-			return []parser.Type{&parser.BasicType{Name: "float"}}
+			return []parser.Type{&parser.BasicType{Name: "float64"}}
 		}
 		return []parser.Type{&parser.BasicType{Name: "int"}}
 	case *parser.StringLiteral:
