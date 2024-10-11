@@ -474,7 +474,7 @@ func (cg *CodeGenerator) generateExpression(file *os.File, expr parser.Expressio
 		//}
 		fmt.Fprint(file, e.Value)
 	case *parser.IntegerLiteral:
-		fmt.Fprint(file, e.Value)
+		fmt.Fprint(file, e.TokenLiteral())
 	case *parser.StringLiteral:
 		switch strings.Contains(e.Value, "[]byte") {
 		case true:

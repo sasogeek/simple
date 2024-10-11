@@ -1,13 +1,11 @@
-def fibonacci_sequence(n, sequence):
-    if len(sequence) >= n:
-        return sequence
+import "math"
 
-    next_fib = sequence[len(sequence)-1] + sequence[len(sequence)-2]
-    sequence=append(sequence, next_fib)
+def calculateSqrt(number):
+    return math.Sqrt(number)
 
-    return fibonacci_sequence(n, sequence)
+def displayResult():
+    num = 25.0
+    result = calculateSqrt(num)
+    print("The square root of", num, "is", result)
 
-n = 15
-seq = [0, 1]
-fib_sequence = fibonacci_sequence(n, seq)
-print(fib_sequence)
+displayResult()
