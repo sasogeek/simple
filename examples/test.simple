@@ -1,21 +1,13 @@
-import "fmt"
-import "sync"
+def fibonacci_sequence(n, sequence):
+    if len(sequence) >= n:
+        return sequence
 
-def executeTask(id):
-    fmt.Println("Goroutine", id, "is running")
+    next_fib = sequence[len(sequence)-1] + sequence[len(sequence)-2]
+    sequence=append(sequence, next_fib)
 
-def startGoroutines():
-    wg = sync.WaitGroup{}
-    numGoroutines = 3
-    wg.Add(numGoroutines)
-    def work(id):
-        defer wg.Done()
-        executeTask(id)
+    return fibonacci_sequence(n, sequence)
 
-    for i in numGoroutines:
-        go work(i)
-
-    wg.Wait()
-    fmt.Println("All goroutines have finished")
-
-startGoroutines()
+n = 15
+seq = [0, 1]
+fib_sequence = fibonacci_sequence(n, seq)
+print(fib_sequence)

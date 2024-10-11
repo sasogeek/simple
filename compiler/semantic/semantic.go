@@ -861,9 +861,9 @@ func (a *Analyzer) InferExpressionTypes(expr parser.Expression, reportErrors boo
 	case *parser.BooleanLiteral:
 		return []parser.Type{&parser.BasicType{Name: "bool"}}
 	case *parser.ArrayLiteral:
-		return []parser.Type{&parser.BasicType{Name: "[]any"}}
+		return []parser.Type{&parser.BasicType{Name: fmt.Sprintf("[]%s", e.Type.String())}}
 	case *parser.MapLiteral:
-		return []parser.Type{&parser.BasicType{Name: fmt.Sprintf("map[%s]%s", e.KeyType.(*parser.BasicType).Name, e.ValueType.(*parser.BasicType).Name)}}
+		return []parser.Type{&parser.BasicType{Name: fmt.Sprintf("map[%s]%s", e.KeyType.String(), e.ValueType.String())}}
 	case *parser.Identifier:
 		symbol, found := a.CurrentTable.Resolve(e.Value)
 		if !found {

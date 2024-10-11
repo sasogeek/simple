@@ -528,7 +528,7 @@ func (cg *CodeGenerator) isImportedPackage(ident string) bool {
 }
 
 func (cg *CodeGenerator) generateArrayLiteral(file *os.File, arr *parser.ArrayLiteral) {
-	fmt.Fprint(file, "[]any{")
+	fmt.Fprintf(file, "[]%s{", arr.Type.String())
 	for _, el := range arr.Elements {
 		fmt.Fprint(file, el)
 		fmt.Fprint(file, ", ")
@@ -623,28 +623,28 @@ func (cg *CodeGenerator) generateInfixExpression(file *os.File, ie *parser.Infix
 
 		if isLeftString || isRightString {
 			// If either side is a string, convert both sides to strings
-			fmt.Fprint(file, "(")
+			//fmt.Fprint(file, "(")
 			cg.generateStringExpression(file, ie.Left)
 			fmt.Fprintf(file, " %s ", ie.Operator)
 			cg.generateStringExpression(file, ie.Right)
-			fmt.Fprint(file, ")")
+			//fmt.Fprint(file, ")")
 			return
 		} else if numeric {
 			// Both sides are numeric, check if type casting is necessary
 			castType := cg.getNumericCastType(cg.analyzer.GetGoTypeFromParserType(leftType), cg.analyzer.GetGoTypeFromParserType(rightType))
-			fmt.Fprint(file, "(")
+			//fmt.Fprint(file, "(")
 			cg.generateNumericExpression(file, ie.Left, castType)
 			fmt.Fprintf(file, " %s ", ie.Operator)
 			cg.generateNumericExpression(file, ie.Right, castType)
-			fmt.Fprint(file, ")")
+			//fmt.Fprint(file, ")")
 			return
 		} else {
 			// Handle other types without casting
-			fmt.Fprint(file, "(")
+			//fmt.Fprint(file, "(")
 			cg.generateExpression(file, ie.Left)
 			fmt.Fprintf(file, " %s ", ie.Operator)
 			cg.generateExpression(file, ie.Right)
-			fmt.Fprint(file, ")")
+			//fmt.Fprint(file, ")")
 			return
 		}
 

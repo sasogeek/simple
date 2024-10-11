@@ -700,6 +700,21 @@ func (p *Parser) parseArrayLiteral() Expression {
 
 	array.Elements = p.parseExpressionList(lexer.TokenBracketClose)
 
+	if len(array.Elements) == 0 {
+		anyType := &BasicType{Name: "any"}
+		array.Type = &ArrayType{
+			ElementType: anyType,
+		}
+		return array
+	}
+
+	elTypes := []Type{}
+	for _, el := range array.Elements {
+		elTypes = append(elTypes, p.inferExpressionType(el))
+	}
+
+	array.Type = p.inferCommonType(elTypes)
+
 	return array
 }
 
