@@ -155,7 +155,7 @@ func main() {
 		return
 	}
 
-	fmt.Printf("Build successful! Binary: %s\n", binaryName)
+	fmt.Printf("%s/%s\n", outputDir, binaryName)
 
 	// Step 3: Run the binary
 	err = runBinary(filepath.Join(outputDir, filepath.Base(binaryName)))
@@ -164,5 +164,4 @@ func main() {
 		return
 	}
 
-	fmt.Println("Compilation successful! Generated Go code is in the '", outputDir, "' directory.")
 }
