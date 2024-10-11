@@ -347,7 +347,7 @@ def serializeData(data):
     return jsonData
 
 def deserializeData(jsonStr):
-    decodedData = {"placeholder": "", "dict": 0}
+    decodedData = {"placeholder1": "", "placeholder2": 0}
     json.Unmarshal(jsonStr, &decodedData)
     return decodedData
 

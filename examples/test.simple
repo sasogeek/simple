@@ -1,11 +1,24 @@
-import "math"
+import "encoding/json"
 
-def calculateSqrt(number):
-    return math.Sqrt(number)
+def serializeData(data):
+    jsonData, err = json.Marshal(data)
+    if err != nil:
+        print("Error marshaling JSON:", err)
+    return jsonData
 
-def displayResult():
-    num = 25.0
-    result = calculateSqrt(num)
-    print("The square root of", num, "is", result)
+def deserializeData(jsonStr):
+    decodedData = {"placeholder": "", "placeholder2": 0}
+    json.Unmarshal(jsonStr, &decodedData)
+    return decodedData
 
-displayResult()
+def processJSON():
+    data = {"name": "Simple Language","version": "1.0","features": ["lexer", "parser", "semantic analyzer", "transformer", "code generator"]}
+    jsonStr = serializeData(data)
+    print("Serialized JSON:")
+    print(jsonStr)
+
+    decoded = deserializeData(jsonStr)
+    print("Deserialized Data:")
+    print(decoded)
+
+processJSON()
