@@ -231,6 +231,7 @@ def displayResult():
     print("The square root of", num, "is", result)
 
 displayResult()
+
 ```
 
 #### Example 3: Using `strings` for String Manipulation
