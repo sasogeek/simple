@@ -215,6 +215,7 @@ def greet():
     print("Hello, Simple World!")
 
 greet()
+
 ```
 
 #### Example 2: Using `math` for Mathematical Operations
@@ -251,6 +252,7 @@ def mainLogic():
     stringManipulation(text)
 
 mainLogic()
+
 ```
 
 #### Example 4: Using `time` for Time-Related Operations
@@ -270,6 +272,7 @@ def startCountdown():
     countdownTimer(3)
 
 startCountdown()
+
 ```
 
 #### Example 5: Using `os` for Operating System Interactions
@@ -295,6 +298,7 @@ def mainLogic():
     createFile("example.txt", "Hello from Simple!\n")
 
 mainLogic()
+
 ```
 
 #### Example 6: Using `net/http` to Make HTTP Requests
@@ -328,6 +332,7 @@ def mainLogic():
     displayResponse(responseBody)
 
 mainLogic()
+
 ```
 
 #### Example 7: Using `encoding/json` for JSON Serialization and Deserialization
@@ -386,7 +391,6 @@ def startGoroutines():
     print("All goroutines have finished")
 
 startGoroutines()
-
 
 ```
 
