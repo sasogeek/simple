@@ -4,12 +4,14 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"os/user"
 	"path/filepath"
 	"simple/codegen"
 	"simple/lexer"
 	"simple/parser"
 	"simple/semantic"
 	"simple/transformer"
+	"strings"
 )
 
 // Function to navigate to a directory and create go.mod with a given Go version
@@ -85,25 +87,29 @@ func runBinary(binaryName string) error {
 	return nil
 }
 
-const version = "Simple 0.0.4"
-
-func main() {
-	// Check if the --version flag is passed
-	if len(os.Args) == 2 && os.Args[1] == "--version" {
-		fmt.Println(version)
-		return
-	}
-
-	//filename := "examples/test.simple"
-	filename := os.Args[1]
-	content, err := os.ReadFile(filename)
+func stdlib() ([]string, error) {
+	var files []string
+	usr, err := user.Current()
+	homeDir := usr.HomeDir
+	dir := filepath.Join(homeDir, "simple/stdlib")
+	entries, err := os.ReadDir(dir)
+	//fmt.Println("entries: ", entries)
 	if err != nil {
-		fmt.Printf("Error reading file: %v\n", err)
-		return
+		return nil, err
 	}
 
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			files = append(files, filepath.Join(dir, entry.Name()))
+		}
+	}
+
+	return files, nil
+}
+
+func compile(content string, outputDir string, isMain bool) {
 	// Initialize Lexer
-	l := lexer.NewLexer(string(content))
+	l := lexer.NewLexer(content)
 
 	// Initialize Parser
 	p := parser.NewParser(l)
@@ -123,21 +129,53 @@ func main() {
 	// Perform Transformation
 	transformer.Transform(ast, ast)
 
+	// Initialize Code Generator
+	cg := codegen.NewCodeGenerator(outputDir, analyzer, isMain)
+
+	// Generate Go Code
+	err := cg.GenerateCode(ast)
+	if err != nil {
+		fmt.Println("Error:", err)
+		//return
+	}
+}
+
+const version = "Simple 0.0.4"
+
+func main() {
+	// Check if the --version flag is passed
+	if len(os.Args) == 2 && os.Args[1] == "--version" {
+		fmt.Println(version)
+		return
+	}
+
+	//filename := "examples/test.simple"
+	filename := os.Args[1]
+	mainContent, err := os.ReadFile(filename)
+	if err != nil {
+		fmt.Printf("Error reading file: %v\n", err)
+		return
+	}
+
 	// Code Generation
 	binaryName := filename[:len(filename)-7]
 	cwd, _ := os.Getwd()
 	outputDir := filepath.Join(cwd, binaryName)
 	os.MkdirAll(outputDir, os.ModePerm)
+	//fmt.Println("output directory: ", outputDir)
 
-	// Initialize Code Generator
-	cg := codegen.NewCodeGenerator(outputDir, analyzer, true)
+	stdlibFiles, err := stdlib()
+	for _, file := range stdlibFiles {
+		content, err := os.ReadFile(file)
+		if err == nil {
+			destDir := filepath.Join(outputDir, "lib/"+strings.Split(filepath.Base(file), ".")[0])
+			//fmt.Println("stdlib dest: ", destDir)
+			os.MkdirAll(destDir, os.ModePerm)
+			compile(string(content), destDir, false)
+		}
+	}
 
-	// Generate Go Code
-	err = cg.GenerateCode(ast)
-	//if err != nil {
-	//	fmt.Println("Error:", err)
-	//	return
-	//}
+	compile(string(mainContent), outputDir, true)
 
 	goVersion := "1.23.1"
 

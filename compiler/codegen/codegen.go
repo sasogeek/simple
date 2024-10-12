@@ -20,9 +20,13 @@ type CodeGenerator struct {
 	analyzer    *semantic.Analyzer
 	Returns     map[string]map[string]bool
 	isMain      bool
+	stdLib      map[string]bool
 }
 
 func NewCodeGenerator(outputDir string, analyzer *semantic.Analyzer, isMain bool) *CodeGenerator {
+	stdLib := map[string]bool{
+		"json": true,
+	}
 	return &CodeGenerator{
 		outputDir:   outputDir,
 		imports:     make(map[string]bool),
@@ -30,6 +34,7 @@ func NewCodeGenerator(outputDir string, analyzer *semantic.Analyzer, isMain bool
 		analyzer:    analyzer,
 		Returns:     make(map[string]map[string]bool),
 		isMain:      isMain,
+		stdLib:      stdLib,
 	}
 }
 
@@ -147,6 +152,10 @@ func (cg *CodeGenerator) collectImports(program *parser.Program) error {
 // processSimpleImport processes a simple import by generating a separate Go package.
 func (cg *CodeGenerator) processSimpleImport(packageName string) error {
 	// Prevent processing the same package multiple times
+	if cg.stdLib[packageName] {
+		cg.imports[fmt.Sprintf("%s/lib/%s", filepath.Base(cg.outputDir), packageName)] = true
+		return nil
+	}
 	if _, alreadyProcessed := cg.imports[packageName]; alreadyProcessed {
 		return nil
 	}
@@ -156,6 +165,7 @@ func (cg *CodeGenerator) processSimpleImport(packageName string) error {
 	simpleFilePath := filepath.Join(dir, packageName+".simple")
 	data, err := os.ReadFile(simpleFilePath)
 	if err != nil {
+
 		return fmt.Errorf("could not read simple file '%s': %v", simpleFilePath, err)
 	}
 

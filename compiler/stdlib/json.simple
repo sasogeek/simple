@@ -1,0 +1,15 @@
+import "encoding/json"
+
+def dumps(data):
+    jsonData, err = json.Marshal(data)
+    if err != nil:
+        print("Error marshaling JSON:", err)
+    return jsonData
+
+def loads(jsonStr):
+    decodedData = {"placeholder1": "", "placeholder2": 0}
+    json.Unmarshal(jsonStr, &decodedData)
+    delete(decodedData, "placeholder1")
+    delete(decodedData, "placeholder2")
+    return decodedData
+
