@@ -398,6 +398,23 @@ func (cg *CodeGenerator) generateAssignmentStatement(file *os.File, as *parser.A
 	}
 
 	// Generate the assignment statement
+	for ex := range lhsExpressions {
+		if _, found := cg.analyzer.CurrentTable.Resolve(lhsExpressions[ex]); found {
+			if len(cg.analyzer.Assignments[lhsExpressions[ex]]["types"]) > 1 {
+				switch as.Value.(type) {
+				case *parser.CallExpression:
+					continue
+				case *parser.InfixExpression:
+					continue
+				}
+				if assignmentOperator == ":=" {
+					fmt.Fprintf(file, "var %s any\n", lhsExpressions[ex])
+					cg.writeIndent(file)
+					assignmentOperator = "="
+				}
+			}
+		}
+	}
 	fmt.Fprintf(file, "%s %s ", strings.Join(lhsExpressions, ", "), assignmentOperator)
 	cg.generateExpression(file, as.Value)
 	fmt.Fprintln(file)
@@ -527,7 +544,7 @@ func (cg *CodeGenerator) generateExpression(file *os.File, expr parser.Expressio
 		fmt.Fprint(file, e.Index.String())
 		fmt.Fprint(file, "]")
 	default:
-		// Handle other expressions as needed
+
 	}
 }
 
@@ -648,6 +665,15 @@ func (cg *CodeGenerator) generateInfixExpression(file *os.File, ie *parser.Infix
 			cg.generateNumericExpression(file, ie.Right, castType)
 			//fmt.Fprint(file, ")")
 			return
+		} else if leftNumeric || rightNumeric {
+			// at least one side numeric, check if type casting is necessary
+			castType := cg.getNumericCastType(cg.analyzer.GetGoTypeFromParserType(leftType), cg.analyzer.GetGoTypeFromParserType(rightType))
+			//fmt.Fprint(file, "(")
+			cg.generateNumericExpression(file, ie.Left, castType)
+			fmt.Fprintf(file, " %s ", ie.Operator)
+			cg.generateNumericExpression(file, ie.Right, castType)
+			//fmt.Fprint(file, ")")
+			return
 		} else {
 			// Handle other types without casting
 			//fmt.Fprint(file, "(")
@@ -689,9 +715,11 @@ func (cg *CodeGenerator) getNumericCastType(leftType, rightType types.Type) stri
 func (cg *CodeGenerator) generateNumericExpression(file *os.File, expr parser.Expression, castType string) {
 	exprType := cg.getExpressionType(expr)
 	if exprType.String() != castType {
-		fmt.Fprintf(file, "%s(", castType)
 		cg.generateExpression(file, expr)
-		fmt.Fprint(file, ")")
+		switch expr.(type) {
+		case *parser.Identifier:
+			fmt.Fprintf(file, ".(%s)", castType)
+		}
 	} else {
 		cg.generateExpression(file, expr)
 	}
@@ -869,6 +897,35 @@ func (cg *CodeGenerator) generateCallExpression(file *os.File, ce *parser.CallEx
 			fmt.Fprint(file, "nil")
 		} else {
 			cg.generateExpression(file, arg)
+			switch arg.(type) {
+			case *parser.Identifier:
+				isInterface := false
+				var castType string
+				symbol, exsts := cg.analyzer.CurrentTable.Resolve(arg.String())
+				if exsts {
+					argType := symbol.Type.String()
+					count := 0
+					for _, obj := range cg.analyzer.Objects {
+						if mapObj, exists := obj[arg.String()]; exists {
+							if mapObj["function"] == cg.analyzer.CurrentTable.Name {
+								if (argType == "interface{}" || argType == "any") && (mapObj["type"] != "interface{}" && mapObj["type"] != "any") {
+									castType = mapObj["type"]
+									count++
+								}
+								if count > 1 {
+									isInterface = true
+									break
+									// report warning, potentially calling a go method with an argument that is not the correct type.
+								}
+							}
+						}
+					}
+					if !isInterface && castType != "" {
+						fmt.Fprintf(file, ".(%s)", castType)
+					}
+				}
+
+			}
 		}
 		//}
 

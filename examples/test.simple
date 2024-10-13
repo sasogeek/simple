@@ -1,7 +1,151 @@
-import json
+a = 100
+print(a)
+a="hello"
+print(a)
 
+import "fmt"
 
-mydict = {"hello": "world"}
-mydictString = json.Dumps(mydict)
-myjson = json.Loads(mydictString)
-print(myjson)
+def greet():
+    print("Hello, Simple World!")
+
+greet()
+
+import "math"
+
+def calculateSqrt(number):
+    return math.Sqrt(number)
+
+def displayResult():
+    num = 25.0
+    result = calculateSqrt(num)
+    print("The square root of", num, "is", result)
+
+displayResult()
+
+import "strings"
+
+def stringManipulation(original):
+    upper = strings.ToUpper(original)
+    contains = strings.Contains(original, "programming")
+    print("Original:", original)
+    print("Uppercase:", upper)
+    print("Contains 'programming':", contains)
+
+def mainLogic():
+    text = "simple programming language"
+    stringManipulation(text)
+
+mainLogic()
+
+import "time"
+
+def countdownTimer(seconds):
+    while seconds > 0:
+        print(seconds)
+        time.Sleep(1 * time.Second)
+        seconds = seconds - 1
+    print("Liftoff!")
+
+def startCountdown():
+    print("Starting countdown...")
+    countdownTimer(3)
+
+startCountdown()
+
+import "os"
+
+def readEnv():
+    homeDir = os.Getenv("HOME")
+    print("Home Directory:", homeDir)
+
+def createFile(filename, content):
+    file, err = os.Create(filename)
+    if err != nil:
+        print("Error creating file:", err)
+        return
+    file.WriteString(content)
+    file.Close()
+    print("File", filename, "created successfully.")
+
+def mainLogic1():
+    readEnv()
+    createFile("example.txt", "Hello from Simple!\n")
+
+mainLogic1()
+
+import "net/http"
+import "io/ioutil"
+
+def fetchGitHubAPI(url):
+    response, err = http.Get(url)
+    if err != nil:
+        print("Error making GET request:", err)
+        return nil
+    defer response.Body.Close()
+    body, err = ioutil.ReadAll(response.Body)
+    if err != nil:
+        print("Error reading response body:", err)
+        return nil
+    return body
+
+def displayResponse(body):
+    if body != nil:
+        print("Response from GitHub API:")
+        print(string(body))
+    else:
+        print("No response to display.")
+
+def mainLogic2():
+    url = "https://api.github.com"
+    responseBody = fetchGitHubAPI(url)
+    displayResponse(responseBody)
+
+mainLogic2()
+
+import "encoding/json"
+
+def serializeData(data):
+    jsonData, err = json.Marshal(data)
+    if err != nil:
+        print("Error marshaling JSON:", err)
+    return jsonData
+
+def deserializeData(jsonStr):
+    decodedData = {"placeholder1": "", "placeholder2": 0}
+    json.Unmarshal(jsonStr, &decodedData)
+    return decodedData
+
+def processJSON():
+    data = {"name": "Simple Language","version": "1.0","features": ["lexer", "parser", "semantic analyzer", "transformer", "code generator"]}
+    jsonStr = serializeData(data)
+    print("Serialized JSON:")
+    print(jsonStr)
+
+    decoded = deserializeData(jsonStr)
+    print("Deserialized Data:")
+    print(decoded)
+
+processJSON()
+
+import "fmt"
+import "sync"
+
+def executeTask(id):
+    fmt.Println("Goroutine", id, "is running")
+
+def startGoroutines():
+    wg = sync.WaitGroup{}
+    numGoroutines = 3
+    wg.Add(numGoroutines)
+
+    def work(id):
+        defer wg.Done()
+        executeTask(id)
+
+    for i in numGoroutines:
+        go work(i)
+
+    wg.Wait()
+    print("All goroutines have finished")
+
+startGoroutines()

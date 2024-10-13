@@ -6,6 +6,7 @@ import (
 	"simple/lexer"
 	"simple/parser"
 	"simple/semantic"
+	"slices"
 	"strings"
 )
 
@@ -72,7 +73,11 @@ func (t *Transformer) handleAssignmentStatement(as *parser.AssignmentStatement, 
 
 	// Infer the type(s) of the RHS expression(s)
 	varTypes := t.analyzer.InferExpressionTypes(as.Value, true) // Returns []parser.Type
-
+	if len(as.Value.String()) > 2 {
+		if as.Value.String()[len(as.Value.String())-2:] == "{}" {
+			varTypes = []parser.Type{&parser.BasicType{Name: as.Value.String()[:len(as.Value.String())-2]}}
+		}
+	}
 	// Update the symbol table and variable types
 	for i, leftExpr := range as.Left {
 		var currentVarType parser.Type
@@ -94,9 +99,27 @@ func (t *Transformer) handleAssignmentStatement(as *parser.AssignmentStatement, 
 					Type:  currentVarType,
 					Scope: t.analyzer.CurrentTable.Name,
 				})
+				t.analyzer.Assignments[name] = map[string][]string{"types": []string{}}
+				t.analyzer.Assignments[name]["types"] = append(t.analyzer.Assignments[name]["types"], currentVarType.String())
 			} else {
+				switch symbol.Type.(type) {
+				case *parser.BasicType:
+					if currentVarType.(*parser.BasicType).Name != symbol.Type.(*parser.BasicType).Name {
+						symbol.Type = currentVarType
+						t.updateFunctionParameterTypes(name, symbol.Type, rNode)
+						if t.analyzer.Assignments[name]["types"] == nil {
+							t.analyzer.Assignments[name] = map[string][]string{"types": []string{}}
+							t.analyzer.Assignments[name]["types"] = append(t.analyzer.Assignments[name]["types"], currentVarType.String())
+						} else {
+							if !slices.Contains(t.analyzer.Assignments[name]["types"], currentVarType.String()) {
+								t.analyzer.Assignments[name]["types"] = append(t.analyzer.Assignments[name]["types"], currentVarType.String())
+							}
+						}
+						return
+					}
+				}
 				// Update the symbol's type
-				symbol.Type = currentVarType
+				//symbol.Type = currentVarType
 			}
 			t.updateFunctionParameterTypes(name, currentVarType, rNode)
 			// Handle other types of LHS expressions if needed

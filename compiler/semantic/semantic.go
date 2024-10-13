@@ -2,7 +2,6 @@ package semantic
 
 import (
 	"fmt"
-	"github.com/google/uuid"
 	"go/token"
 	"go/types"
 	"golang.org/x/tools/go/packages"
@@ -73,6 +72,8 @@ type Analyzer struct {
 	ExternalInterfaces  map[string]*ExternalInterface
 	ExternalConstants   map[string]parser.Type
 	ExpectedReturnTypes map[*parser.CallExpression][]parser.Type
+	Objects             []map[string]map[string]string
+	Assignments         map[string]map[string][]string
 }
 
 // NewAnalyzer creates a new semantic analyzer.
@@ -89,6 +90,8 @@ func NewAnalyzer() *Analyzer {
 		ExternalInterfaces:  make(map[string]*ExternalInterface),
 		ExternalConstants:   make(map[string]parser.Type),
 		ExpectedReturnTypes: make(map[*parser.CallExpression][]parser.Type),
+		Objects:             []map[string]map[string]string{},
+		Assignments:         make(map[string]map[string][]string),
 	}
 
 	// Initialize built-in functions
@@ -480,6 +483,16 @@ func (a *Analyzer) InferFunctionReturnType(body *parser.BlockStatement, funcTabl
 
 	// For simplicity, assume all return statements return the same types
 	// You may want to implement a unification algorithm here
+	if len(collectedReturnTypes) > 1 {
+		ReturnType := collectedReturnTypes[0]
+		for _, returnType := range collectedReturnTypes[1:] {
+			if returnType[0].TypeName() != ReturnType[0].TypeName() {
+				ReturnType = []parser.Type{&parser.BasicType{Name: "interface{}"}}
+				return ReturnType
+			}
+		}
+		return ReturnType
+	}
 	return collectedReturnTypes[0]
 }
 
@@ -490,6 +503,11 @@ func (a *Analyzer) handleAssignmentStatement(as *parser.AssignmentStatement, rem
 
 	// Infer the type(s) of the value(s)
 	varTypes := a.InferExpressionTypes(as.Value, true) // Returns []parser.Type
+	if len(as.Value.String()) > 2 {
+		if as.Value.String()[len(as.Value.String())-2:] == "{}" {
+			varTypes = []parser.Type{&parser.BasicType{Name: as.Value.String()[:len(as.Value.String())-2]}}
+		}
+	}
 
 	// Determine the scope based on the current symbol table
 	scope := a.CurrentTable.Name
@@ -520,21 +538,25 @@ func (a *Analyzer) handleAssignmentStatement(as *parser.AssignmentStatement, rem
 					Scope: scope,
 				})
 			} else {
-				prevName := symbol.Name
+				//prevName := symbol.Name
 				if symbol.Type.TypeName() != currentVarType.TypeName() {
 					// Variable type has changed; rename the variable
-					vid := strings.Replace(uuid.NewString(), "-", "", -1)[:5]
-					newName := name + vid
-					expr.Value = newName
-					a.CurrentTable.Define(newName, &Symbol{
-						Name:  newName,
-						Type:  currentVarType,
-						Scope: scope,
-					})
-					// Update any references to the variable in the remaining statements
-					for _, stmt := range remainingStatements {
-						a.updateVariableReferences(stmt, prevName, newName)
+					//vid := strings.Replace(uuid.NewString(), "-", "", -1)[:5]
+					//newName := name + vid
+					//expr.Value = newName
+					switch symbol.Type.(type) {
+					case *parser.BasicType:
+						anyType := &parser.BasicType{Name: "interface{}"}
+						a.CurrentTable.Define(name, &Symbol{
+							Name:  name,
+							Type:  anyType,
+							Scope: scope,
+						})
 					}
+					// Update any references to the variable in the remaining statements
+					//for _, stmt := range remainingStatements {
+					//	a.updateVariableReferences(stmt, prevName, newName)
+					//}
 				}
 			}
 		case *parser.IndexExpression, *parser.SelectorExpression:
@@ -725,10 +747,14 @@ func (a *Analyzer) handleCallExpression(ce *parser.CallExpression) {
 
 				} else {
 					// Adopt the argument type
-					ft.ParameterTypes[i] = argType
-					if ft.Parameters != nil && i < len(ft.Parameters) {
-						a.CurrentTable.Define(ft.Parameters[i].Value, &Symbol{Name: ft.Parameters[i].Value, Type: argType, GoType: a.GetGoTypeFromParserType(argType)})
+					//ft.ParameterTypes[i] = argType
+					if len(ft.Parameters) > 0 {
+						objectMap := map[string]map[string]string{ft.Parameters[i].Value: {"type": argType.String(), "scope": a.CurrentTable.Name, "function": ce.Function.String()}}
+						a.Objects = append(a.Objects, objectMap)
 					}
+					//if ft.Parameters != nil && i < len(ft.Parameters) {
+					//	a.CurrentTable.Define(ft.Parameters[i].Value, &Symbol{Name: ft.Parameters[i].Value, Type: argType, GoType: a.GetGoTypeFromParserType(argType)})
+					//}
 				}
 			}
 		}
@@ -1006,13 +1032,13 @@ func (a *Analyzer) InferExpressionTypes(expr parser.Expression, reportErrors boo
 		}
 	case *parser.SelectorExpression:
 		// Handle package or object member access
-		return a.inferSelectorExpressionType(e, reportErrors)
+		return a.InferSelectorExpressionType(e, reportErrors)
 	default:
 		return []parser.Type{&parser.BasicType{Name: "interface{}"}}
 	}
 }
 
-func (a *Analyzer) inferSelectorExpressionType(e *parser.SelectorExpression, reportErrors bool) []parser.Type {
+func (a *Analyzer) InferSelectorExpressionType(e *parser.SelectorExpression, reportErrors bool) []parser.Type {
 	// Handle package or object member access
 	if pkgMethod, exists := a.GlobalTable.Symbols[fmt.Sprintf("%s.%s", e.Left.String(), e.Selector.Value)]; exists {
 		return []parser.Type{pkgMethod.Type}
