@@ -270,23 +270,32 @@ func (a *Analyzer) Analyze(node parser.Node, remainingStatements []parser.Statem
 				if found {
 					switch symbol.Type.(type) {
 					case *parser.BasicType:
-						a.CurrentTable.Define(n.Variable.Value, &Symbol{
-							Name:  n.Variable.Value,
-							Type:  &parser.BasicType{Name: "int"}, // Initial type
-							Scope: "local",
-						})
+						switch symbol.Type.(*parser.BasicType).Name {
+						case "interface{}":
+							a.CurrentTable.Define(n.Variable.Value, &Symbol{
+								Name:  n.Variable.Value,
+								Type:  &parser.BasicType{Name: "interface{}"}, // Initial type
+								Scope: a.CurrentTable.Name,
+							})
+						default:
+							a.CurrentTable.Define(n.Variable.Value, &Symbol{
+								Name:  n.Variable.Value,
+								Type:  &parser.BasicType{Name: "int"}, // Initial type
+								Scope: a.CurrentTable.Name,
+							})
+						}
 					default:
 						a.CurrentTable.Define(n.Variable.Value, &Symbol{
 							Name:  n.Variable.Value,
 							Type:  &parser.BasicType{Name: "interface{}"}, // Initial type
-							Scope: "local",
+							Scope: a.CurrentTable.Name,
 						})
 					}
 				} else {
 					a.CurrentTable.Define(n.Variable.Value, &Symbol{
 						Name:  n.Variable.Value,
 						Type:  &parser.BasicType{Name: "interface{}"}, // Initial type
-						Scope: "local",
+						Scope: a.CurrentTable.Name,
 					})
 				}
 			}
@@ -959,6 +968,10 @@ func (a *Analyzer) InferExpressionTypes(expr parser.Expression, reportErrors boo
 			}
 			return ft.ReturnTypes
 		case *parser.BasicType:
+			if e.Function.(*parser.Identifier).Value == "make" && e.Arguments[0].(*parser.Identifier).Value == "chan" {
+				//chanType := a.InferExpressionTypes(e.Arguments[1], reportErrors)[0]
+				return []parser.Type{&parser.BasicType{Name: fmt.Sprintf("chan any")}}
+			}
 			return []parser.Type{ft}
 		}
 
@@ -1016,6 +1029,8 @@ func (a *Analyzer) InferExpressionTypes(expr parser.Expression, reportErrors boo
 				return []parser.Type{&parser.BasicType{Name: "int"}}
 			}
 			return []parser.Type{&parser.BasicType{Name: "interface{}"}}
+		case "<-":
+			return []parser.Type{&parser.BasicType{Name: "chan any"}}
 		default:
 			return []parser.Type{&parser.BasicType{Name: "interface{}"}}
 		}

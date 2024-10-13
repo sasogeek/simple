@@ -784,9 +784,9 @@ func (cg *CodeGenerator) getExpressionType(expr parser.Expression) parser.Type {
 
 // generatePrefixExpression generates Go code for a prefix expression.
 func (cg *CodeGenerator) generatePrefixExpression(file *os.File, pe *parser.PrefixExpression) {
-	fmt.Fprintf(file, "(%s", pe.Operator)
+	fmt.Fprintf(file, "%s ", pe.Operator)
 	cg.generateExpression(file, pe.Right)
-	fmt.Fprint(file, ")")
+	//fmt.Fprint(file, ")")
 }
 
 // generateCallExpression generates Go code for a function call.
@@ -857,6 +857,19 @@ func (cg *CodeGenerator) generateCallExpression(file *os.File, ce *parser.CallEx
 			}
 			fmt.Fprint(file, ")")
 			return
+		case "make":
+			switch ce.Arguments[0].(*parser.Identifier).Value {
+			case "chan":
+				fmt.Fprint(file, "make(chan any, ")
+				for i, arg := range ce.Arguments[1:] {
+					cg.generateExpression(file, arg)
+					if i < len(ce.Arguments[1:])-1 {
+						fmt.Fprint(file, ", ")
+					}
+				}
+				fmt.Fprint(file, ")")
+				return
+			}
 		}
 	}
 
@@ -1029,9 +1042,15 @@ func (cg *CodeGenerator) generateForStatement(file *os.File, fs *parser.ForState
 		case *parser.BasicType:
 			switch symbol.Type.(*parser.BasicType).Name {
 			case "int":
-				fmt.Fprintf(file, "for %s := range ", fs.Variable.Value)
+				if fs.Variable.Value == "_" {
+					fmt.Fprint(file, "for _ = range ")
+				} else {
+					fmt.Fprintf(file, "for %s := range ", fs.Variable.Value)
+				}
 			case "[]any":
 				fmt.Fprintf(file, "for _, %s := range ", fs.Variable.Value)
+			case "chan any":
+				fmt.Fprintf(file, "for %s := range ", fs.Variable.Value)
 			default:
 				if strings.Contains(st.Name, "map") {
 					fmt.Fprintf(file, "for %s, _ := range ", fs.Variable.Value)
@@ -1040,7 +1059,7 @@ func (cg *CodeGenerator) generateForStatement(file *os.File, fs *parser.ForState
 				}
 			}
 		}
-		symbol.Metadata["set"] = true
+		symbol.Metadata = map[string]any{"set": true}
 
 	default:
 		fmt.Fprintf(file, "for %s, _ := range ", fs.Variable.Value)

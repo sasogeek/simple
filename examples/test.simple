@@ -119,7 +119,7 @@ def processJSON():
     data = {"name": "Simple Language","version": "1.0","features": ["lexer", "parser", "semantic analyzer", "transformer", "code generator"]}
     jsonStr = serializeData(data)
     print("Serialized JSON:")
-    print(jsonStr)
+    print(string(jsonStr))
 
     decoded = deserializeData(jsonStr)
     print("Deserialized Data:")
@@ -149,3 +149,35 @@ def startGoroutines():
     print("All goroutines have finished")
 
 startGoroutines()
+
+import "fmt"
+import "time"
+
+def worker(id, jobs, results):
+	for j in jobs:
+		print("Worker ", id, "started job ", j)
+		time.Sleep(time.Second)
+		print("Worker ", id, "finished job ", j)
+		results <- j * 2
+
+
+numJobs = 5
+jobs = make(chan, numJobs)
+results = make(chan, numJobs)
+
+w = 1
+while w <= 3:
+    go worker(w, jobs, results)
+    w = w+1
+
+
+for jo in numJobs:
+    jobs <- jo
+
+close(jobs)
+
+
+for _ in numJobs:
+    result = <-results
+    print("Result: ", result)
+

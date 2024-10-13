@@ -587,6 +587,7 @@ func (ie *IndexExpression) String() string {
 const (
 	_ int = iota
 	LOWEST
+	CHAN
 	EQUALS      // == or !=
 	LESSGREATER // >, <, >=, <=
 	SUM         // + or -
@@ -612,6 +613,7 @@ var precedences = map[lexer.TokenType]int{
 	lexer.TokenParenOpen:   CALL, // For function calls
 	lexer.TokenDot:         SELECTOR,
 	lexer.TokenBracketOpen: CALL,
+	lexer.TokenChan:        CHAN,
 }
 
 // Parser represents a parser.
@@ -646,6 +648,7 @@ func NewParser(l *lexer.Lexer) *Parser {
 	p.registerPrefix(lexer.TokenString, p.parseStringLiteral)
 	p.registerPrefix(lexer.TokenBang, p.parsePrefixExpression)
 	p.registerPrefix(lexer.TokenMinus, p.parsePrefixExpression)
+	p.registerPrefix(lexer.TokenChan, p.parsePrefixExpression)
 	p.registerPrefix(lexer.TokenParenOpen, p.parseGroupedExpression)
 	p.registerPrefix(lexer.TokenTrue, p.parseBooleanLiteral)
 	p.registerPrefix(lexer.TokenFalse, p.parseBooleanLiteral)
@@ -663,6 +666,7 @@ func NewParser(l *lexer.Lexer) *Parser {
 	p.registerInfix(lexer.TokenEQ, p.parseInfixExpression)
 	p.registerInfix(lexer.TokenNotEQ, p.parseInfixExpression)
 	p.registerInfix(lexer.TokenLT, p.parseInfixExpression)
+	p.registerInfix(lexer.TokenChan, p.parseInfixExpression)
 	p.registerInfix(lexer.TokenLTE, p.parseInfixExpression)
 	p.registerInfix(lexer.TokenGT, p.parseInfixExpression)
 	p.registerInfix(lexer.TokenGTE, p.parseInfixExpression)

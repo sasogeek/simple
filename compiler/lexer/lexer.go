@@ -39,6 +39,7 @@ const (
 	TokenGT    TokenType = ">"
 	TokenGTE   TokenType = ">="
 	TokenLT    TokenType = "<"
+	TokenChan  TokenType = "<-"
 	TokenLTE   TokenType = "<="
 
 	// Boolean Literals
@@ -218,6 +219,11 @@ func (l *Lexer) NextToken() Token {
 			l.readChar()
 			literal := string(ch) + string(l.ch)
 			tok = Token{Type: TokenLTE, Literal: literal, Line: l.line, Column: l.column - 1}
+		} else if l.peekChar() == '-' {
+			ch := l.ch
+			l.readChar()
+			literal := string(ch) + string(l.ch)
+			tok = Token{Type: TokenChan, Literal: literal, Line: l.line, Column: l.column - 1}
 		} else {
 			tok = Token{Type: TokenLT, Literal: string(l.ch), Line: l.line, Column: l.column}
 		}
