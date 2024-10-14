@@ -333,6 +333,11 @@ func (l *Lexer) skipWhitespace() {
 func (l *Lexer) readIdentifier() string {
 	position := l.readPosition - 1
 	for isLetter(l.ch) || isDigit(l.ch) || l.ch == '&' || l.ch == '{' || l.ch == '}' {
+		if l.ch == '{' {
+			for l.ch != '}' {
+				l.readChar()
+			}
+		}
 		l.readChar()
 	}
 	return l.input[position : l.readPosition-1]

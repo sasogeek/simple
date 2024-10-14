@@ -330,7 +330,9 @@ func (ce *CallExpression) String() string {
 	var out strings.Builder
 	args := []string{}
 	for _, a := range ce.Arguments {
-		args = append(args, a.String())
+		if a != nil {
+			args = append(args, a.String())
+		}
 	}
 	out.WriteString(ce.Function.String())
 	out.WriteString("(")

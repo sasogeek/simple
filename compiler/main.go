@@ -162,7 +162,17 @@ func main() {
 	cwd, _ := os.Getwd()
 	outputDir := filepath.Join(cwd, binaryName)
 	os.MkdirAll(outputDir, os.ModePerm)
+
 	//fmt.Println("output directory: ", outputDir)
+
+	goVersion := "1.23.1"
+
+	// Step 1: Create go.mod file
+	err = createGoMod(outputDir, goVersion)
+	//if err != nil {
+	//	fmt.Println("Error:", err)
+	//	return
+	//}
 
 	stdlibFiles, err := stdlib()
 	for _, file := range stdlibFiles {
@@ -177,7 +187,7 @@ func main() {
 
 	compile(string(mainContent), outputDir, true)
 
-	goVersion := "1.23.1"
+	//goVersion := "1.23.1"
 
 	// Step 1: Create go.mod file
 	err = createGoMod(outputDir, goVersion)

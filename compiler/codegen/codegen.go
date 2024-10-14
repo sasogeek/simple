@@ -263,6 +263,10 @@ func (cg *CodeGenerator) generateFunction(file *os.File, fn *parser.FunctionLite
 				paramType = "*" + elemType[len(elemType)-1]
 			case *parser.BasicType:
 				paramType = pt.String()
+			case *parser.ArrayType:
+				paramType = pt.String()
+			case *parser.MapType:
+				paramType = pt.String()
 			}
 		}
 		params = append(params, fmt.Sprintf("%s %s", p.Value, paramType))

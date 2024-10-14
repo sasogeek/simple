@@ -1,28 +1,17 @@
+import "github.com/gin-gonic/gin"
 import "net/http"
 
-def home(w, r):
-    w.Header().Set("Content-Type", "text/html")
-    name = "Simple"
-    w.Write(`<!DOCTYPE html>
-            		<html>
-            		<head>
-            			<title>My Page</title>
-            		</head>
-            		<body>
-            			<h1>Hello, World!</h1>
-            			<h2>` + name + ` is here!</h2>
-            			<p>This is a simple HTML page served using net/http in Go.</p>
-            		</body>
-            		</html>`)
+app = gin.Default()
+
+app.LoadHTMLGlob("../templates/*")
+
+def index(c):
+    data = gin.H{"Title": "My Gin Web Page", "Heading": "Ohhh yes!", "Message": "This page is rendered using Gin with template variables!",}
+    c.HTML(http.StatusOK, "index.html", data)
 
 
-
-http.HandleFunc("/", home)
-
+app.GET("/", index)
 
 
-port = "8080"
-print("Starting HTTP server on :"+port)
-print("http://localhost:"+port)
-
-http.ListenAndServe(":"+port)
+print("http://localhost:8080")
+app.Run(":8080")

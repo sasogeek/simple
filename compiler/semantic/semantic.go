@@ -5,6 +5,8 @@ import (
 	"go/token"
 	"go/types"
 	"golang.org/x/tools/go/packages"
+	"os"
+	"os/exec"
 	"simple/parser"
 	"strings"
 )
@@ -67,6 +69,7 @@ type Analyzer struct {
 	SymbolTables        *SymbolTables
 	errors              []string
 	importedPackages    map[string]*packages.Package
+	PkgPaths            map[string]string
 	WrapFunctionCalls   map[*parser.CallExpression][]WrapperInfo
 	ExternalFuncs       map[string]*parser.FunctionType // key: "package.Func"
 	ExternalInterfaces  map[string]*ExternalInterface
@@ -85,6 +88,7 @@ func NewAnalyzer() *Analyzer {
 		SymbolTables:        &SymbolTables{Tables: map[string]*SymbolTable{"global": global}},
 		errors:              []string{},
 		importedPackages:    make(map[string]*packages.Package),
+		PkgPaths:            make(map[string]string),
 		WrapFunctionCalls:   make(map[*parser.CallExpression][]WrapperInfo),
 		ExternalFuncs:       make(map[string]*parser.FunctionType),
 		ExternalInterfaces:  make(map[string]*ExternalInterface),
@@ -513,8 +517,8 @@ func (a *Analyzer) handleAssignmentStatement(as *parser.AssignmentStatement, rem
 	// Infer the type(s) of the value(s)
 	varTypes := a.InferExpressionTypes(as.Value, true) // Returns []parser.Type
 	if len(as.Value.String()) > 2 {
-		if as.Value.String()[len(as.Value.String())-2:] == "{}" {
-			varTypes = []parser.Type{&parser.BasicType{Name: as.Value.String()[:len(as.Value.String())-2]}}
+		if as.Value.String()[len(as.Value.String())-1:] == "}" {
+			varTypes = []parser.Type{&parser.BasicType{Name: as.Value.String()[:strings.Index(as.Value.String(), "{")]}}
 		}
 	}
 
@@ -566,6 +570,48 @@ func (a *Analyzer) handleAssignmentStatement(as *parser.AssignmentStatement, rem
 					//for _, stmt := range remainingStatements {
 					//	a.updateVariableReferences(stmt, prevName, newName)
 					//}
+				}
+			}
+
+			// Add exported functions and types to the symbol table
+			switch currentVarType.(type) {
+			case *parser.PointerType:
+				pkgName := currentVarType.(*parser.PointerType).ElementType.(*parser.NamedType).Package
+				//funcName := currentVarType.(*parser.PointerType).ElementType.(*parser.NamedType).Name
+				//fmt.Println(funcName)
+				// Load the package using golang.org/x/tools/go/packages
+				cfg := &packages.Config{
+					Mode: packages.NeedName | packages.NeedTypes | packages.NeedSyntax | packages.NeedTypesInfo | packages.NeedDeps | packages.NeedImports,
+				}
+				pkgs, err := packages.Load(cfg, a.PkgPaths[pkgName])
+				if err != nil || len(pkgs) == 0 {
+					a.errors = append(a.errors, fmt.Sprintf("Failed to load package: %s", a.PkgPaths[pkgName]))
+					return
+				}
+
+				pkg := pkgs[0]
+
+				pkgScope := pkg.Types.Scope()
+				for _, fname := range pkgScope.Names() {
+					obj := pkgScope.Lookup(fname)
+					if obj == nil || !obj.Exported() {
+						continue
+					}
+
+					switch obj := obj.(type) {
+					case *types.Func:
+						// Handle functions
+						sig := obj.Type().(*types.Signature)
+
+						functionType := a.functionTypeFromSignature(sig)
+						symbol := &Symbol{
+							Name:   name + "." + fname,
+							Type:   functionType,
+							Scope:  "imported",
+							GoType: sig,
+						}
+						a.GlobalTable.Define(name+"."+fname, symbol)
+					}
 				}
 			}
 		case *parser.IndexExpression, *parser.SelectorExpression:
@@ -769,8 +815,16 @@ func (a *Analyzer) handleCallExpression(ce *parser.CallExpression) {
 		}
 		switch len(ft.ParameterTypes) > len(ce.Arguments) {
 		case true:
-			for len(ft.ParameterTypes) > len(ce.Arguments) {
-				ce.Arguments = append(ce.Arguments, nil)
+			argsLen := len(ce.Arguments)
+			for len(ft.ParameterTypes) > argsLen {
+				switch ft.ParameterTypes[argsLen].(type) {
+				case *parser.ArrayType:
+					argsLen++
+					continue
+				default:
+					ce.Arguments = append(ce.Arguments, nil)
+					argsLen++
+				}
 			}
 
 		}
@@ -937,40 +991,49 @@ func (a *Analyzer) InferExpressionTypes(expr parser.Expression, reportErrors boo
 		case *parser.FunctionType:
 			// Analyze arguments
 			for i, arg := range e.Arguments {
-				argTypes := a.InferExpressionTypes(arg, reportErrors)
-				if i >= len(ft.ParameterTypes) {
-					if reportErrors {
-						a.errors = append(a.errors, fmt.Sprintf("Too many arguments in call to '%s'", e.Function.String()))
+				if arg != nil {
+					argTypes := a.InferExpressionTypes(arg, reportErrors)
+					if i >= len(ft.ParameterTypes) {
+						if reportErrors {
+							a.errors = append(a.errors, fmt.Sprintf("Too many arguments in call to '%s'", e.Function.String()))
+						}
+						break
 					}
-					break
-				}
-				expectedType := ft.ParameterTypes[i]
-				argType := argTypes[0]
-				if !a.AreTypesCompatible(argType, expectedType) {
-					if reportErrors {
-						a.errors = append(a.errors, fmt.Sprintf("Argument %d in call to '%s' has incompatible type '%s'; expected '%s'", i+1, e.Function.String(), argType.String(), expectedType.String()))
+					expectedType := ft.ParameterTypes[i]
+					argType := argTypes[0]
+					if !a.AreTypesCompatible(argType, expectedType) {
+						if reportErrors {
+							a.errors = append(a.errors, fmt.Sprintf("Argument %d in call to '%s' has incompatible type '%s'; expected '%s'", i+1, e.Function.String(), argType.String(), expectedType.String()))
+						}
 					}
-				}
-				prevTable := a.CurrentTable
-				switch e.Function.(type) {
-				case *parser.Identifier:
-					a.CurrentTable = a.SymbolTables.Tables[e.Function.(*parser.Identifier).Value]
-					goType := a.GetGoTypeFromParserType(expectedType)
-					symbol, found := a.CurrentTable.Resolve(funcType.(*parser.FunctionType).Parameters[i].Value)
-					if found {
-						a.CurrentTable.Define(symbol.Name, &Symbol{Name: symbol.Name, Type: expectedType, GoType: goType})
-					} else {
-						argName := funcType.(*parser.FunctionType).Parameters[i].Value
-						a.CurrentTable.Define(argName, &Symbol{Name: argName, Type: expectedType, GoType: goType})
+					prevTable := a.CurrentTable
+					switch e.Function.(type) {
+					case *parser.Identifier:
+						a.CurrentTable = a.SymbolTables.Tables[e.Function.(*parser.Identifier).Value]
+						goType := a.GetGoTypeFromParserType(expectedType)
+						symbol, found := a.CurrentTable.Resolve(funcType.(*parser.FunctionType).Parameters[i].Value)
+						if found {
+							a.CurrentTable.Define(symbol.Name, &Symbol{Name: symbol.Name, Type: expectedType, GoType: goType})
+						} else {
+							argName := funcType.(*parser.FunctionType).Parameters[i].Value
+							a.CurrentTable.Define(argName, &Symbol{Name: argName, Type: expectedType, GoType: goType})
+						}
 					}
+					a.CurrentTable = prevTable
 				}
-				a.CurrentTable = prevTable
 			}
 			return ft.ReturnTypes
 		case *parser.BasicType:
-			if e.Function.(*parser.Identifier).Value == "make" && e.Arguments[0].(*parser.Identifier).Value == "chan" {
-				//chanType := a.InferExpressionTypes(e.Arguments[1], reportErrors)[0]
-				return []parser.Type{&parser.BasicType{Name: fmt.Sprintf("chan any")}}
+			switch e.Function.(type) {
+			case *parser.Identifier:
+				switch e.Arguments[0].(type) {
+				case *parser.Identifier:
+					if e.Function.(*parser.Identifier).Value == "make" && e.Arguments[0].(*parser.Identifier).Value == "chan" {
+						//chanType := a.InferExpressionTypes(e.Arguments[1], reportErrors)[0]
+						return []parser.Type{&parser.BasicType{Name: fmt.Sprintf("chan any")}}
+					}
+					return []parser.Type{ft}
+				}
 			}
 			return []parser.Type{ft}
 		}
@@ -1120,13 +1183,13 @@ func (a *Analyzer) functionTypeFromSignature(sig *types.Signature) *parser.Funct
 	paramTypes := []parser.Type{}
 	for i := 0; i < sig.Params().Len(); i++ {
 		param := sig.Params().At(i)
-		paramTypes = append(paramTypes, &parser.BasicType{Name: param.Type().String()})
+		paramTypes = append(paramTypes, a.convertGoType(param.Type()))
 	}
 
 	returnTypes := []parser.Type{}
 	for i := 0; i < sig.Results().Len(); i++ {
 		result := sig.Results().At(i)
-		returnTypes = append(returnTypes, &parser.BasicType{Name: result.Type().String()})
+		returnTypes = append(returnTypes, a.convertGoType(result.Type()))
 	}
 
 	return &parser.FunctionType{
@@ -1150,9 +1213,16 @@ func (a *Analyzer) handleImportStatement(is *parser.ImportStatement) {
 		return
 	}
 
+	if strings.Contains(modulePath, ".") && strings.Contains(modulePath, "/") {
+		cmd := exec.Command("go", "get", modulePath)
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		cmd.Run()
+	}
+
 	// Load the package using golang.org/x/tools/go/packages
 	cfg := &packages.Config{
-		Mode: packages.NeedName | packages.NeedTypes | packages.NeedSyntax | packages.NeedTypesInfo | packages.NeedDeps,
+		Mode: packages.NeedName | packages.NeedTypes | packages.NeedSyntax | packages.NeedTypesInfo | packages.NeedDeps | packages.NeedImports,
 	}
 	pkgs, err := packages.Load(cfg, modulePath)
 	if err != nil || len(pkgs) == 0 {
@@ -1162,7 +1232,7 @@ func (a *Analyzer) handleImportStatement(is *parser.ImportStatement) {
 
 	pkg := pkgs[0]
 	a.importedPackages[modulePath] = pkg
-
+	a.PkgPaths[pkg.Name] = modulePath
 	a.extractExternalFunctions(pkg)
 	a.extractExternalInterfaces(pkg)
 	a.extractExternalConstants(pkg)
@@ -1179,11 +1249,11 @@ func (a *Analyzer) handleImportStatement(is *parser.ImportStatement) {
 		case *types.Func:
 			// Handle functions
 			sig := obj.Type().(*types.Signature)
-			paramTypes := []parser.Type{}
-			for i := 0; i < sig.Params().Len(); i++ {
-				param := sig.Params().At(i)
-				paramTypes = append(paramTypes, &parser.BasicType{Name: param.Type().String()})
-			}
+			//paramTypes := []parser.Type{}
+			//for i := 0; i < sig.Params().Len(); i++ {
+			//	param := sig.Params().At(i)
+			//	paramTypes = append(paramTypes, a.convertGoType(param.Type()))
+			//}
 
 			functionType := a.functionTypeFromSignature(sig)
 			symbol := &Symbol{
@@ -1426,6 +1496,10 @@ func (a *Analyzer) convertGoType(goType types.Type) parser.Type {
 		return &parser.BasicType{Name: t.Name()}
 	case *types.Pointer:
 		elemType := a.convertGoType(t.Elem())
+		if strings.Contains(elemType.(*parser.NamedType).Package, "Engine") {
+			fmt.Println()
+		}
+		elemType.(*parser.NamedType).Package = fmt.Sprintf("%s", strings.Split(elemType.(*parser.NamedType).Package, "/")[len(strings.Split(elemType.(*parser.NamedType).Package, "/"))-1])
 		return &parser.PointerType{ElementType: elemType}
 	case *types.Named:
 		obj := t.Obj()
@@ -1433,9 +1507,13 @@ func (a *Analyzer) convertGoType(goType types.Type) parser.Type {
 		if obj.Pkg() != nil {
 			pkgPath = obj.Pkg().Path()
 		}
+		if strings.Contains(pkgPath, "Engine") {
+			fmt.Println()
+		}
+		pkg := fmt.Sprintf("%s", strings.Split(pkgPath, "/")[len(strings.Split(pkgPath, "/"))-1])
 		return &parser.NamedType{
 			Name:    obj.Name(),
-			Package: pkgPath,
+			Package: pkg,
 		}
 	case *types.Signature:
 		// Handle function types
