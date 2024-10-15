@@ -2,13 +2,13 @@ package codegen
 
 import (
 	"fmt"
+	"github.com/sasogeek/simple/lexer"
+	"github.com/sasogeek/simple/parser"
+	"github.com/sasogeek/simple/semantic"
+	"github.com/sasogeek/simple/transformer"
 	"go/types"
 	"os"
 	"path/filepath"
-	"simple/lexer"
-	"simple/parser"
-	"simple/semantic"
-	"simple/transformer"
 	"strings"
 )
 

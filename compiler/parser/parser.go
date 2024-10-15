@@ -2,7 +2,7 @@ package parser
 
 import (
 	"fmt"
-	"simple/lexer"
+	"github.com/sasogeek/simple/lexer"
 	"strconv"
 	"strings"
 )

@@ -38,7 +38,7 @@
 package utils
 
 import (
-	"simple/lexer"
+	"github.com/sasogeek/simple/lexer"
 )
 
 // Tokenize collects all tokens from the lexer.

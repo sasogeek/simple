@@ -2,15 +2,15 @@ package main
 
 import (
 	"fmt"
+	"github.com/sasogeek/simple/codegen"
+	"github.com/sasogeek/simple/lexer"
+	"github.com/sasogeek/simple/parser"
+	"github.com/sasogeek/simple/semantic"
+	"github.com/sasogeek/simple/transformer"
 	"os"
 	"os/exec"
 	"os/user"
 	"path/filepath"
-	"simple/codegen"
-	"simple/lexer"
-	"simple/parser"
-	"simple/semantic"
-	"simple/transformer"
 	"strings"
 )
 

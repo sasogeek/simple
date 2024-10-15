@@ -2,12 +2,12 @@ package semantic
 
 import (
 	"fmt"
+	"github.com/sasogeek/simple/parser"
 	"go/token"
 	"go/types"
 	"golang.org/x/tools/go/packages"
 	"os"
 	"os/exec"
-	"simple/parser"
 	"strings"
 )
 

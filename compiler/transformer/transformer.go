@@ -2,10 +2,10 @@ package transformer
 
 import (
 	"fmt"
+	"github.com/sasogeek/simple/lexer"
+	"github.com/sasogeek/simple/parser"
+	"github.com/sasogeek/simple/semantic"
 	"go/types"
-	"simple/lexer"
-	"simple/parser"
-	"simple/semantic"
 	"slices"
 	"strings"
 )
