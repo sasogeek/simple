@@ -141,10 +141,7 @@ func (cg *CodeGenerator) collectImports(program *parser.Program) error {
 		}
 	}
 
-	// If 'print' is used, add 'fmt' to imports
-	if cg.isBuiltinUsed("print", program) {
-		cg.imports["fmt"] = true
-	}
+	cg.imports["fmt"] = true
 
 	return nil
 }

@@ -51,8 +51,8 @@ func createGoMod(dir, goVersion string) error {
 }
 
 // Function to run go build and return the binary's name
-func buildGoProject(dir string) (string, error) {
-	binaryName := filepath.Base(dir)
+func buildGoProject(dir string, binaryName string) (string, error) {
+	//binaryName := filepath.Base(dir)
 
 	// Run go build
 	cmd := exec.Command("go", "build", "-o", binaryName)
@@ -158,9 +158,9 @@ func main() {
 	}
 
 	// Code Generation
-	binaryName := filename[:len(filename)-7]
+	binaryName := filepath.Base(filename[:len(filename)-7])
 	cwd, _ := os.Getwd()
-	outputDir := filepath.Join(cwd, binaryName)
+	outputDir := cwd
 	os.MkdirAll(outputDir, os.ModePerm)
 
 	//fmt.Println("output directory: ", outputDir)
@@ -197,7 +197,7 @@ func main() {
 	//}
 
 	// Step 2: Build the project
-	_, err = buildGoProject(outputDir)
+	_, err = buildGoProject(outputDir, binaryName)
 	if err != nil {
 		fmt.Println("Error:", err)
 		return
@@ -206,7 +206,7 @@ func main() {
 	fmt.Printf("%s/%s\n", outputDir, binaryName)
 
 	// Step 3: Run the binary
-	err = runBinary(filepath.Join(outputDir, filepath.Base(binaryName)))
+	err = runBinary(filepath.Join(outputDir, binaryName))
 	if err != nil {
 		fmt.Println("Error:", err)
 		return

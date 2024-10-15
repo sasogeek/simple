@@ -235,18 +235,34 @@ func (t *Transformer) handleCallExpression(ce *parser.CallExpression, rNode pars
 									expectedType := methodSig.Params().At(paramId)
 									switch ce.Arguments[paramId].(type) {
 									case *parser.StringLiteral:
-										ce.Arguments[paramId].(*parser.StringLiteral).Value = fmt.Sprintf("%s(\"%s\")", expectedType.Type().String(), ce.Arguments[paramId].(*parser.StringLiteral).String())
+										switch expectedType.Type().(type) {
+										case *types.Slice:
+											ce.Arguments[paramId].(*parser.StringLiteral).Value = fmt.Sprintf("%s", ce.Arguments[paramId].(*parser.StringLiteral).String())
+										default:
+											ce.Arguments[paramId].(*parser.StringLiteral).Value = fmt.Sprintf("%s(\"%s\")", expectedType.Type().String(), ce.Arguments[paramId].(*parser.StringLiteral).String())
+										}
 									case *parser.Identifier:
-										ce.Arguments[paramId].(*parser.Identifier).Value = fmt.Sprintf("%s(%s)", expectedType.Type().String(), ce.Arguments[paramId].(*parser.Identifier).String())
+										switch expectedType.Type().(type) {
+										case *types.Slice:
+											ce.Arguments[paramId].(*parser.Identifier).Value = fmt.Sprintf("%s", ce.Arguments[paramId].(*parser.Identifier).String())
+										default:
+											ce.Arguments[paramId].(*parser.Identifier).Value = fmt.Sprintf("%s(%s)", expectedType.Type().String(), ce.Arguments[paramId].(*parser.Identifier).String())
+										}
 									case *parser.InfixExpression:
 										stringValue := ""
-										stringLiteral := &parser.StringLiteral{
-											Token: lexer.Token{Type: lexer.TokenString},
+										stringLiteral := &parser.Identifier{
+											Token: lexer.Token{Type: lexer.TokenIdentifier},
 											Value: stringValue,
 										}
-										stringLiteral.Value = t.expressionToString(ce.Arguments[paramId].(*parser.InfixExpression))
-										stringLiteral.Value = fmt.Sprintf("%s(%s)", expectedType.Type().String(), stringLiteral.Value)
-										ce.Arguments[paramId] = stringLiteral
+										switch expectedType.Type().(type) {
+										case *types.Slice:
+											stringLiteral.Value = t.expressionToString(ce.Arguments[paramId].(*parser.InfixExpression))
+											ce.Arguments[paramId] = stringLiteral
+										default:
+											stringLiteral.Value = t.expressionToString(ce.Arguments[paramId].(*parser.InfixExpression))
+											stringLiteral.Value = fmt.Sprintf("%s(%s)", expectedType.Type().String(), stringLiteral.Value)
+											ce.Arguments[paramId] = stringLiteral
+										}
 									}
 								}
 							}
@@ -276,16 +292,28 @@ func (t *Transformer) handleCallExpression(ce *parser.CallExpression, rNode pars
 										case *parser.StringLiteral:
 											//ce.Arguments[paramId].(*parser.StringLiteral).Value = fmt.Sprintf("%s(\"%s\")", expectedType.Type().String(), ce.Arguments[paramId].(*parser.StringLiteral).String())
 										case *parser.Identifier:
-											ce.Arguments[paramId].(*parser.Identifier).Value = fmt.Sprintf("%s(%s)", expectedType.Type().String(), ce.Arguments[paramId].(*parser.Identifier).String())
+											switch expectedType.Type().(type) {
+											case *types.Slice:
+												ce.Arguments[paramId].(*parser.Identifier).Value = fmt.Sprintf("%s", ce.Arguments[paramId].(*parser.Identifier).String())
+											default:
+												ce.Arguments[paramId].(*parser.Identifier).Value = fmt.Sprintf("%s(%s)", expectedType.Type().String(), ce.Arguments[paramId].(*parser.Identifier).String())
+											}
+
 										case *parser.InfixExpression:
 											stringValue := ""
-											stringLiteral := &parser.StringLiteral{
-												Token: lexer.Token{Type: lexer.TokenString},
+											stringLiteral := &parser.Identifier{
+												Token: lexer.Token{Type: lexer.TokenIdentifier},
 												Value: stringValue,
 											}
-											stringLiteral.Value = t.expressionToString(ce.Arguments[paramId].(*parser.InfixExpression))
-											stringLiteral.Value = fmt.Sprintf("%s(%s)", expectedType.Type().String(), stringLiteral.Value)
-											ce.Arguments[paramId] = stringLiteral
+											switch expectedType.Type().(type) {
+											case *types.Slice:
+												stringLiteral.Value = t.expressionToString(ce.Arguments[paramId].(*parser.InfixExpression))
+												ce.Arguments[paramId] = stringLiteral
+											default:
+												stringLiteral.Value = t.expressionToString(ce.Arguments[paramId].(*parser.InfixExpression))
+												stringLiteral.Value = fmt.Sprintf("%s(%s)", expectedType.Type().String(), stringLiteral.Value)
+												ce.Arguments[paramId] = stringLiteral
+											}
 										}
 									}
 								}
@@ -333,13 +361,19 @@ func (t *Transformer) handleCallExpression(ce *parser.CallExpression, rNode pars
 																//ce.Arguments[paramId].(*parser.Identifier).Value = fmt.Sprintf("%s(%s)", strings.Split(expectedType.Type().String(), "/")[len(strings.Split(expectedType.Type().String(), "/"))-1], ce.Arguments[paramId].(*parser.Identifier).String())
 															case *parser.InfixExpression:
 																stringValue := ""
-																stringLiteral := &parser.StringLiteral{
-																	Token: lexer.Token{Type: lexer.TokenString},
+																stringLiteral := &parser.Identifier{
+																	Token: lexer.Token{Type: lexer.TokenIdentifier},
 																	Value: stringValue,
 																}
-																stringLiteral.Value = t.expressionToString(ce.Arguments[paramId].(*parser.InfixExpression))
-																stringLiteral.Value = fmt.Sprintf("%s(%s)", expectedType.Type().String(), stringLiteral.Value)
-																ce.Arguments[paramId] = stringLiteral
+																switch expectedType.Type().(type) {
+																case *types.Slice:
+																	stringLiteral.Value = t.expressionToString(ce.Arguments[paramId].(*parser.InfixExpression))
+																	ce.Arguments[paramId] = stringLiteral
+																default:
+																	stringLiteral.Value = t.expressionToString(ce.Arguments[paramId].(*parser.InfixExpression))
+																	stringLiteral.Value = fmt.Sprintf("%s(%s)", expectedType.Type().String(), stringLiteral.Value)
+																	ce.Arguments[paramId] = stringLiteral
+																}
 															}
 														}
 													}
@@ -417,9 +451,9 @@ func (t *Transformer) expressionToString(expr parser.Expression) string {
 		rs := t.expressionToString(e.Right)
 		switch e.Operator {
 		case "+":
-			return fmt.Sprintf("fmt.Sprintf(\"%%v %%v\", %s, %s)", ls, rs)
+			return fmt.Sprintf("fmt.Sprintf(\"%%v+%%v\", %s, %s)", ls, rs)
 		default:
-			return fmt.Sprintf("fmt.Sprintf(\"%%v %%v\", %s, %s)", ls, rs)
+			return fmt.Sprintf("fmt.Sprintf(\"%%v+%%v\", %s, %s)", ls, rs)
 		}
 	case *parser.Identifier:
 		return fmt.Sprintf("fmt.Sprintf(\"%%v\", %s)", e.Value)
