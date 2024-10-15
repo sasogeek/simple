@@ -572,6 +572,7 @@ type IndexExpression struct {
 	Token lexer.Token // The '[' token
 	Left  Expression
 	Index Expression
+	End   Expression
 }
 
 func (ie *IndexExpression) expressionNode()      {}
@@ -580,7 +581,23 @@ func (ie *IndexExpression) String() string {
 	var out strings.Builder
 	out.WriteString(ie.Left.String())
 	out.WriteString("[")
-	out.WriteString(ie.Index.String())
+	if ie.Index.String() == "(-1)" {
+		out.WriteString("len(")
+		out.WriteString(ie.Left.String())
+		out.WriteString(")-1")
+	} else {
+		out.WriteString(ie.Index.String())
+	}
+	if ie.End != nil {
+		out.WriteString(":")
+		if ie.End.String() == "(-1)" {
+			out.WriteString("len(")
+			out.WriteString(ie.Left.String())
+			out.WriteString(")-1")
+		} else {
+			out.WriteString(ie.End.String())
+		}
+	}
 	out.WriteString("]")
 	return out.String()
 }
@@ -693,7 +710,14 @@ func (p *Parser) parseIndexExpression(left Expression) Expression {
 	exp.Index = p.parseExpression(LOWEST)
 
 	if !p.expectPeek(lexer.TokenBracketClose) {
-		return nil
+		if !p.expectPeek(lexer.TokenColon) {
+			return nil
+		}
+		p.nextToken()
+		exp.End = p.parseExpression(LOWEST)
+		if !p.expectPeek(lexer.TokenBracketClose) {
+			return nil
+		}
 	}
 
 	return exp

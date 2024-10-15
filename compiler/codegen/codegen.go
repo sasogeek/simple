@@ -543,10 +543,7 @@ func (cg *CodeGenerator) generateExpression(file *os.File, expr parser.Expressio
 	case *parser.MapLiteral:
 		cg.generateMapLiteral(file, e)
 	case *parser.IndexExpression:
-		fmt.Fprint(file, e.Left.String())
-		fmt.Fprint(file, "[")
-		fmt.Fprint(file, e.Index.String())
-		fmt.Fprint(file, "]")
+		fmt.Fprint(file, e.String())
 	default:
 
 	}
