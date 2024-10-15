@@ -2,7 +2,7 @@ package semantic
 
 import (
 	"fmt"
-	"github.com/sasogeek/simple/parser"
+	"github.com/sasogeek/simple/compiler/parser"
 	"go/token"
 	"go/types"
 	"golang.org/x/tools/go/packages"

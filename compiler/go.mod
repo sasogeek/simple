@@ -1,4 +1,4 @@
-module github.com/sasogeek/simple
+module github.com/sasogeek/simple/compiler
 
 go 1.23.1
 

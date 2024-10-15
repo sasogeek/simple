@@ -2,10 +2,10 @@ package codegen
 
 import (
 	"fmt"
-	"github.com/sasogeek/simple/lexer"
-	"github.com/sasogeek/simple/parser"
-	"github.com/sasogeek/simple/semantic"
-	"github.com/sasogeek/simple/transformer"
+	"github.com/sasogeek/simple/compiler/lexer"
+	"github.com/sasogeek/simple/compiler/parser"
+	"github.com/sasogeek/simple/compiler/semantic"
+	"github.com/sasogeek/simple/compiler/transformer"
 	"go/types"
 	"os"
 	"path/filepath"
