@@ -1,4 +1,4 @@
-module simple
+module github.com/sasogeek/simple
 
 go 1.23.1
 

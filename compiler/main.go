@@ -160,7 +160,7 @@ func main() {
 	// Code Generation
 	binaryName := filepath.Base(filename[:len(filename)-7])
 	cwd, _ := os.Getwd()
-	outputDir := cwd
+	outputDir := filepath.Join(cwd, filename[:len(filename)-len(binaryName)-7])
 	os.MkdirAll(outputDir, os.ModePerm)
 
 	//fmt.Println("output directory: ", outputDir)

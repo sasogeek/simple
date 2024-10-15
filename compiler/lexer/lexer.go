@@ -267,6 +267,12 @@ func (l *Lexer) NextToken() Token {
 		tok = Token{Type: TokenEOF, Literal: "", Line: l.line, Column: l.column}
 	case '.':
 		tok = Token{Type: TokenDot, Literal: string(l.ch), Line: l.line, Column: l.column}
+	case '#':
+		l.skipComment()
+		tok = Token{Type: TokenNewline, Literal: "\\n", Line: l.line, Column: l.column}
+		l.readChar()
+		l.AtNewLine = true
+		return tok
 	default:
 		if l.ch == '&' || isLetter(l.ch) {
 			literal := l.readIdentifier()
@@ -325,6 +331,12 @@ func (l *Lexer) PeekAhead(n int) Token {
 // skipWhitespace skips over spaces and tabs.
 func (l *Lexer) skipWhitespace() {
 	for l.ch == ' ' || l.ch == '\t' || l.ch == '\r' {
+		l.readChar()
+	}
+}
+
+func (l *Lexer) skipComment() {
+	for l.ch != '\n' {
 		l.readChar()
 	}
 }
