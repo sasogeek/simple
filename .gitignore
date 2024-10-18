@@ -4,5 +4,5 @@
 */go.sum
 */test
 */test.simple
-*/examples/
-lsp/
+examples
+simple-lsp

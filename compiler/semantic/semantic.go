@@ -1026,14 +1026,17 @@ func (a *Analyzer) InferExpressionTypes(expr parser.Expression, reportErrors boo
 		case *parser.BasicType:
 			switch e.Function.(type) {
 			case *parser.Identifier:
-				switch e.Arguments[0].(type) {
-				case *parser.Identifier:
-					if e.Function.(*parser.Identifier).Value == "make" && e.Arguments[0].(*parser.Identifier).Value == "chan" {
-						//chanType := a.InferExpressionTypes(e.Arguments[1], reportErrors)[0]
-						return []parser.Type{&parser.BasicType{Name: fmt.Sprintf("chan any")}}
+				for i, _ := range e.Arguments {
+					switch e.Arguments[i].(type) {
+					case *parser.Identifier:
+						if e.Function.(*parser.Identifier).Value == "make" && e.Arguments[i].(*parser.Identifier).Value == "chan" {
+							//chanType := a.InferExpressionTypes(e.Arguments[1], reportErrors)[0]
+							return []parser.Type{&parser.BasicType{Name: fmt.Sprintf("chan any")}}
+						}
+						return []parser.Type{ft}
 					}
-					return []parser.Type{ft}
 				}
+
 			}
 			return []parser.Type{ft}
 		}
