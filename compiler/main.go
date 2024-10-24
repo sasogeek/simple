@@ -149,7 +149,7 @@ func main() {
 		return
 	}
 
-	//filename := "examples/test.simple"
+	//filename := "examples/myapp/myapp.simple"
 	filename := os.Args[1]
 	mainContent, err := os.ReadFile(filename)
 	if err != nil {
