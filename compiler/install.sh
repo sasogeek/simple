@@ -29,6 +29,7 @@ else
   echo "Go is already installed."
 fi
 
+rm -r $OUTPUT_DIR
 # Create the output directory if it doesn't exist
 mkdir -p $OUTPUT_DIR
 
